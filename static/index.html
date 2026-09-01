@@ -216,15 +216,111 @@
         border-radius: 8px;
       }
       #staffView {
-        max-width: 640px;
-        margin: 20px auto;
+        max-width: 760px;
+        margin: 24px auto;
+        padding: 24px;
         font-size: 14px;
+        background: #f7faf7;
+        border: 1px solid #e1eae3;
+        border-radius: 14px;
+        box-shadow: 0 3px 12px rgba(43, 70, 55, 0.06);
+      }
+      #staffView h2 {
+        margin: 0 0 20px;
+        color: #3f5f4d;
+        font-size: 21px;
+        font-weight: 650;
+        letter-spacing: -0.2px;
       }
       .leadrow {
-        border-bottom: 1px solid #eee;
-        padding: 8px 0;
+        border: 1px solid #e1e8e2;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin: 8px 0;
         display: flex;
         justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        background: #fff;
+      }
+      .staff-section {
+        margin-top: 20px;
+        padding: 16px;
+        background: #fff;
+        border: 1px solid #e1e8e2;
+        border-radius: 12px;
+      }
+      .section-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .section-heading h3 {
+        margin: 0;
+        color: #3f5f4d;
+        font-size: 15px;
+      }
+      .section-heading span {
+        font-size: 11px;
+        color: #8a968d;
+      }
+      .section-note {
+        margin: 5px 0 12px;
+        font-size: 12px;
+        color: #7b837d;
+      }
+      .compassion-row button {
+        flex-shrink: 0;
+        padding: 7px 11px;
+        border: 1px solid #6f8d79;
+        border-radius: 7px;
+        background: #edf4ee;
+        color: #3f5f4d;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .compassion-row button:hover {
+        background: #e2eee5;
+      }
+      .compassion-row button:disabled {
+        background: #f0f2f0;
+        border-color: #d9ded9;
+        color: #8a918b;
+        cursor: default;
+      }
+      #staffView input {
+        padding: 9px 11px;
+        border: 1px solid #d8e2da;
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        font-size: 13px;
+        outline: none;
+      }
+      #staffView input:focus {
+        border-color: var(--sage);
+        box-shadow: 0 0 0 2px rgba(95, 122, 106, 0.12);
+      }
+      .staff-login-btn {
+        padding: 9px 18px;
+        border: 1px solid #4f6f5b;
+        border-radius: 8px;
+        background: #5f7a6a;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          transform 0.1s ease;
+      }
+      .staff-login-btn:hover {
+        background: #4f6f5b;
+      }
+      .staff-login-btn:active {
+        transform: translateY(1px);
       }
       nav.tabs {
         text-align: center;
@@ -235,6 +331,30 @@
         margin: 0 8px;
         color: var(--sage);
         text-decoration: none;
+      }
+      @media (max-width: 600px) {
+        #staffView {
+          margin: 12px;
+          padding: 16px;
+        }
+        #staffView > div:first-of-type {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+        }
+        #staffView input,
+        .staff-login-btn {
+          width: 100%;
+        }
+        .leadrow {
+          align-items: flex-start;
+        }
+        .compassion-row {
+          flex-direction: column;
+        }
+        .compassion-row button {
+          width: 100%;
+        }
       }
     </style>
   </head>
@@ -287,7 +407,7 @@
           placeholder="password (demo1234)"
           type="password"
         />
-        <button onclick="staffLogin()">Log in</button>
+        <button class="staff-login-btn" onclick="staffLogin()">Log in</button>
       </div>
       <div id="compassionBox"></div>
       <div id="leadsBox"></div>
@@ -408,13 +528,13 @@
         const card = document.createElement("div");
         card.className = "signupCard";
         card.innerHTML = `Want me to email you a summary of this conversation plus 6 questions people often forget to ask the doctor?<br>
-    <input id="su_email" placeholder="email"><input id="su_phone" placeholder="phone">
-    <input id="su_pass" placeholder="create a password" type="password">
-    <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
-        <input type="checkbox" id="su_marketing">
-        <span style="white-space:nowrap;">Also send me occasional clinic updates</span>
-    </label>
-    <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
+          <input id="su_email" placeholder="email"><input id="su_phone" placeholder="phone">
+          <input id="su_pass" placeholder="create a password" type="password">
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="su_marketing">
+            <span style="white-space:nowrap;">Also send me occasional clinic updates</span>
+          </label>
+          <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
         t.appendChild(card);
       }
       async function doSignup() {
@@ -495,27 +615,39 @@
         });
         const d = await r.json();
         document.getElementById("compassionBox").innerHTML =
-          "<h3>Compassion priority (never sales-ranked)</h3>" +
+          '<section class="staff-section compassion-section">' +
+          '<div class="section-heading">' +
+          "<h3>Compassion priority</h3>" +
+          "<span>Clinical concerns</span>" +
+          "</div>" +
+          '<p class="section-note">These cases are surfaced separately and are never sales-ranked.</p>' +
           (d.compassion_priority_queue
             .map(
-              (c) => `
-                <div class="leadrow">
-                    <span>${c.summary.join("; ")}</span>
-                    <button onclick="respondToEscalation('${c.escalation_id}', this)">
-                        Review / Respond
-                    </button>
-                </div>
-            `,
+              (c) => `<div class="leadrow compassion-row">
+                <span>${c.summary.join("; ")}</span>
+                <button onclick="respondToEscalation('${c.escalation_id}', this)">
+                  Review / Respond
+                </button>
+              </div>`,
             )
-            .join("") || "<p>None pending</p>");
+            .join("") || '<p class="empty-state">None pending</p>') +
+          "</section>";
         document.getElementById("leadsBox").innerHTML =
+          '<section class="staff-section warm-leads-section">' +
+          '<div class="section-heading">' +
           "<h3>Warm leads</h3>" +
-          d.warm_leads
+          "<span>Follow-up opportunities</span>" +
+          "</div>" +
+          (d.warm_leads
             .map(
               (l) =>
-                `<div class="leadrow"><span>${l.channel} — ${l.top_concern || ""}</span><b>${l.score}</b></div>`,
+                `<div class="leadrow">
+                  <span>${l.channel} — ${l.top_concern || ""}</span>
+                  <b>${l.score}</b>
+                </div>`,
             )
-            .join("");
+            .join("") || '<p class="empty-state">No warm leads yet</p>') +
+          "</section>";
       }
       async function respondToEscalation(escId, button) {
         const response = prompt("Enter clinician response:");
