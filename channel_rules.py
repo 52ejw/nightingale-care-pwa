@@ -15,7 +15,7 @@ def daypart(ts: datetime = None) -> str:
 # key = (channel, identity_level, daypart) ; "*" = wildcard
 CHANNEL_RULES = {
     ("staff_referral", "identified", "*"): {
-        "greeting": "Hi {name_or_there}, {staff_name} from the clinic mentioned you were asking about {topic} earlier — happy to pick up from there whenever you're ready.",
+        "greeting": "Hi {name_or_there}, {staff_name} mentioned you were asking about {topic} earlier — happy to pick up from there whenever you're ready.",
         "value_events_offered": ["topic_summary"],
     },
     ("instagram_comment", "anonymous", "*"): {

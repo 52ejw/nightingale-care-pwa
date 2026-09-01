@@ -199,6 +199,21 @@
         margin: 10px 0;
         font-size: 13.5px;
       }
+      #signupCard label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        line-height: 1.4;
+        margin-top: 8px;
+      }
+
+      #signupCard label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        margin: 2px 0 0;
+      }
       .signupCard input:not([type="checkbox"]) {
         width: 100%;
         margin: 5px 0;
@@ -214,6 +229,21 @@
         color: #fff;
         border: none;
         border-radius: 8px;
+      }
+      .consent-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        font-size: 13px;
+        line-height: 1.4;
+        margin-top: 8px;
+      }
+
+      .consent-option input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        min-width: 16px;
+        margin: 2px 0 0;
       }
       #staffView {
         max-width: 760px;
@@ -447,8 +477,53 @@
         t.scrollTop = t.scrollHeight;
       }
 
-      // bootstrap a guest LeadSession as if the user clicked an IG comment reply
       (async function start() {
+        const params = new URLSearchParams(window.location.search);
+        const referralToken = params.get("ref");
+        const existingLeadId = params.get("lead");
+
+        if (existingLeadId) {
+          const r = await fetch(
+            `/api/lead/${encodeURIComponent(existingLeadId)}`,
+          );
+
+          if (!r.ok) {
+            addBubble(
+              "This conversation link is no longer available. You can still start a new conversation with me.",
+              "them",
+            );
+            return;
+          }
+
+          const d = await r.json();
+          leadId = d.lead_session_id;
+
+          addBubble(
+            "Welcome back. We can continue from where you left off.",
+            "them",
+          );
+          return;
+        }
+
+        if (referralToken) {
+          const r = await fetch(
+            `/api/lead/from-referral/${encodeURIComponent(referralToken)}`,
+          );
+
+          if (!r.ok) {
+            addBubble(
+              "This referral link is no longer available. You can still start a new conversation with me.",
+              "them",
+            );
+            return;
+          }
+
+          const d = await r.json();
+          leadId = d.lead_session_id;
+          addBubble(d.greeting, "them");
+          return;
+        }
+
         const r = await fetch("/api/lead/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -457,6 +532,7 @@
             context: "your inquiry",
           }),
         });
+
         const d = await r.json();
         leadId = d.lead_session_id;
         addBubble(d.greeting, "them");
@@ -534,6 +610,10 @@
             <input type="checkbox" id="su_marketing">
             <span style="white-space:nowrap;">Also send me occasional clinic updates</span>
           </label>
+          <label>
+            <input id="su_healthcare_consent" type="checkbox">
+            I consent to share the healthcare information I provide with the clinic so they can respond to my enquiry.
+          </label>
           <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
         t.appendChild(card);
       }
@@ -544,12 +624,22 @@
           phone: document.getElementById("su_phone").value,
           password: document.getElementById("su_pass").value,
           marketing_consent: document.getElementById("su_marketing").checked,
+          healthcare_consent: document.getElementById("su_healthcare_consent")
+            .checked,
         };
         const r = await fetch("/api/auth/signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
+        if (!r.ok) {
+          const err = await r.json();
+          addBubble(
+            err.error || "We couldn't complete signup. Please try again.",
+            "them",
+          );
+          return;
+        }
         const d = await r.json();
         patientToken = d.token;
         patientSessionId = d.patient_session_id;

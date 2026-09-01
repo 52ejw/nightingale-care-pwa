@@ -169,6 +169,30 @@ def guest_reply(lead_id, text_redacted):
     return ("Happy to help — I can share general info on services, hours, and what to expect, "
             "all without needing an account yet. What would you like to know?"), "education"
 
+@app.get("/api/lead/<lead_id>")
+def get_lead(lead_id):
+    row = DB.execute(
+        "SELECT id, clinic_id, source_channel, campaign_id, creative, "
+        "identity_level, context, status, landing_timestamp, created_at "
+        "FROM lead_sessions WHERE id=?",
+        (lead_id,),
+    ).fetchone()
+
+    if not row:
+        return jsonify({"error": "Lead session not found"}), 404
+
+    return jsonify({
+        "lead_session_id": row["id"],
+        "clinic_id": row["clinic_id"],
+        "source_channel": row["source_channel"],
+        "campaign_id": row["campaign_id"],
+        "creative": row["creative"],
+        "identity_level": row["identity_level"],
+        "context": row["context"],
+        "status": row["status"],
+        "landing_timestamp": row["landing_timestamp"],
+        "created_at": row["created_at"],
+    })
 @app.post("/api/lead/<lead_id>/message")
 def guest_message(lead_id):
     lead = DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
@@ -266,6 +290,10 @@ def signup():
     body = request.get_json(force=True)
     lead_id = body["lead_session_id"]
     email, phone = body["email"], body["phone"]
+    if not body.get("healthcare_consent", False):
+        return jsonify({
+            "error": "Healthcare information sharing consent is required."
+        }), 400
     lead = DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
     if not lead:
         return jsonify({"error": "lead not found"}), 404
