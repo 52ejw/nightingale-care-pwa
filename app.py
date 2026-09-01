@@ -179,6 +179,7 @@ def guest_message(lead_id):
 
     raw = request.get_json(force=True)["message"]
     redacted, phi_found = redact(raw)
+    risk = assess_risk(redacted)
     enc = encrypt(raw) if phi_found else None  # PHI hidden from staff until consent
 
     DB.execute(
@@ -189,7 +190,17 @@ def guest_message(lead_id):
     DB.commit()
     audit(None, "guest_message_received", lead_id, {"phi_detected": phi_found})
 
-    reply, event_type = guest_reply(lead_id, redacted)
+    if risk["risk_level"] in ("high", "medium"):
+        reply = (
+            "I want to make sure the right person sees this rather than me guessing. "
+            "Because you've mentioned something that may need clinical attention, "
+            "I'm not going to give you a generic answer. "
+            "I can help send this to the clinic so a nurse or clinician can review it."
+        )
+        event_type = "clinical_escalation"
+    else:
+        reply, event_type = guest_reply(lead_id, redacted)
+        
     msg_id = new_id()
     DB.execute(
         "INSERT INTO guest_messages (id, lead_session_id, sender, content_redacted, created_at) VALUES (?,?,?,?,?)",
