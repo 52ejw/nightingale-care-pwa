@@ -6,8 +6,8 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-STOP_WORDS = [r"stopped", r"not taking anymore", r"quit", r"discontinued"]
-MED_PATTERN = re.compile(r"\b(?:i take|taking|on)\s+([A-Za-z][\w-]{2,20})\b", re.IGNORECASE)
+STOP_WORDS = [r"stopped", r"not taking anymore", r"quit", r"discontinued", r"no longer taking", r"not taking anymore", r"no longer", r"discontinuing"]
+MED_PATTERN = re.compile(r"\b(?:i take|i am taking|i'm taking|taking|on)\s+([A-Za-z][\w-]{2,20})\b", re.IGNORECASE)
 ALLERGY_PATTERN = re.compile(r"allergic to\s+([A-Za-z][\w-]{2,20})", re.IGNORECASE)
 SYMPTOM_PATTERN = re.compile(
     r"\b(pain|ache|bleeding|fever|nausea|dizziness|cramping|discharge|swelling)\b", re.IGNORECASE

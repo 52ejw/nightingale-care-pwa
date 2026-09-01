@@ -156,6 +156,14 @@
       .drawer.open {
         transform: translateX(0);
       }
+      .drawerClose {
+        float: right;
+        border: none;
+        background: transparent;
+        font-size: 24px;
+        cursor: pointer;
+        line-height: 1;
+      }
       .drawer h3 {
         margin-top: 0;
         font-size: 15px;
@@ -265,6 +273,7 @@
       Profile
     </button>
     <div class="drawer" id="drawer">
+      <button onclick="toggleDrawer()" class="drawerClose">×</button>
       <h3>Your profile</h3>
       <div id="factList"></div>
     </div>
@@ -487,12 +496,18 @@
         const d = await r.json();
         document.getElementById("compassionBox").innerHTML =
           "<h3>Compassion priority (never sales-ranked)</h3>" +
-            d.compassion_priority_queue
-              .map(
-                (c) =>
-                  `<div class="leadrow"><span>${c.summary.join("; ")}</span></div>`,
-              )
-              .join("") || "<p>None pending</p>";
+          (d.compassion_priority_queue
+            .map(
+              (c) => `
+                <div class="leadrow">
+                    <span>${c.summary.join("; ")}</span>
+                    <button onclick="respondToEscalation('${c.escalation_id}', this)">
+                        Review / Respond
+                    </button>
+                </div>
+            `,
+            )
+            .join("") || "<p>None pending</p>");
         document.getElementById("leadsBox").innerHTML =
           "<h3>Warm leads</h3>" +
           d.warm_leads
@@ -501,6 +516,31 @@
                 `<div class="leadrow"><span>${l.channel} — ${l.top_concern || ""}</span><b>${l.score}</b></div>`,
             )
             .join("");
+      }
+      async function respondToEscalation(escId, button) {
+        const response = prompt("Enter clinician response:");
+
+        if (!response || !response.trim()) return;
+
+        const r = await fetch(`/api/staff/escalation/${escId}/respond`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + staffToken,
+          },
+          body: JSON.stringify({ response: response.trim() }),
+        });
+
+        const d = await r.json();
+
+        if (!r.ok) {
+          alert(d.error || "Unable to respond to escalation.");
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = "Responded";
+        loadWarmLeads();
       }
     </script>
   </body>

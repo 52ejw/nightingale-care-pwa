@@ -200,7 +200,7 @@ def guest_message(lead_id):
         event_type = "clinical_escalation"
     else:
         reply, event_type = guest_reply(lead_id, redacted)
-        
+
     msg_id = new_id()
     DB.execute(
         "INSERT INTO guest_messages (id, lead_session_id, sender, content_redacted, created_at) VALUES (?,?,?,?,?)",
@@ -398,6 +398,23 @@ def escalate(ps_id):
         return jsonify({"error": "forbidden"}), 403
     body = request.get_json(force=True)
     trigger_id = body["triggering_message_id"]
+
+    # Handle duplicate requests for the same patient session and triggering message
+    existing = DB.execute(
+        "SELECT id, triage_summary, status FROM escalations "
+        "WHERE patient_session_id=? AND triggering_message_id=? "
+        "ORDER BY created_at DESC LIMIT 1",
+        (ps_id, trigger_id)
+    ).fetchone()
+
+    if existing:
+        return jsonify({
+            "escalation_id": existing["id"],
+            "triage_summary": json.loads(existing["triage_summary"]),
+            "expected_response": "12-18 hours",
+            "status": existing["status"],
+            "already_sent": True
+        })
 
     profile = [dict(r) for r in DB.execute("SELECT * FROM memory_items WHERE patient_session_id=?", (ps_id,)).fetchall()]
     ps = DB.execute("SELECT * FROM patient_sessions WHERE id=?", (ps_id,)).fetchone()

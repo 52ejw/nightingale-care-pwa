@@ -16,7 +16,8 @@ PATTERNS = {
     "EMAIL": re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"),
     # Detects names in phrases like "my name is John Doe".
     # A real system should use NER for more reliable name detection.
-    "NAME": re.compile(r"(?:my name is|i am|i'm)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})", re.IGNORECASE),
+    "NAME": re.compile(
+        r"(?i:(?:my name is|i am|i'm))\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})"),
 }
 
 def redact(text: str) -> tuple[str, bool]:
