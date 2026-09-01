@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nightingale — Sunway Women's Health</title>
+    <style>
+      :root {
+        --sage: #5f7a6a;
+        --cream: #faf7f2;
+        --bubble-me: #5f7a6a;
+        --bubble-them: #eee7db;
+        --ink: #2b2b28;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        background: var(--cream);
+        color: var(--ink);
+      }
+      header {
+        padding: 14px 18px;
+        background: var(--sage);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      header .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #a8e6b0;
+      }
+      main {
+        max-width: 480px;
+        margin: 0 auto;
+        min-height: 100vh;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+      }
+      #thread {
+        flex: 1;
+        padding: 14px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bubble {
+        max-width: 78%;
+        padding: 9px 13px;
+        border-radius: 16px;
+        line-height: 1.35;
+        font-size: 14.5px;
+      }
+      .them {
+        align-self: flex-start;
+        background: var(--bubble-them);
+      }
+      .me {
+        align-self: flex-end;
+        background: var(--bubble-me);
+        color: #fff;
+      }
+      .meta {
+        font-size: 11px;
+        color: #9a9187;
+        margin: 2px 4px;
+        align-self: flex-start;
+      }
+      .citation {
+        font-size: 11px;
+        color: #8a8a86;
+        margin-top: 3px;
+        font-style: italic;
+      }
+      .value-chip {
+        align-self: flex-start;
+        background: #fff3d6;
+        border: 1px solid #eadca0;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .escalate-btn {
+        align-self: flex-start;
+        background: #c85c5c;
+        color: #fff;
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: none;
+        font-size: 13.5px;
+        cursor: pointer;
+      }
+      footer {
+        padding: 10px 14px 14px;
+        border-top: 1px solid #eee;
+      }
+      .emergency {
+        font-size: 11.5px;
+        color: #9c4a4a;
+        text-align: center;
+        margin-bottom: 8px;
+      }
+      .inputrow {
+        display: flex;
+        gap: 8px;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        font-size: 14px;
+      }
+      button.send {
+        background: var(--sage);
+        color: #fff;
+        border: none;
+        border-radius: 20px;
+        padding: 0 18px;
+        font-size: 14px;
+      }
+      #trustBar {
+        display: flex;
+        justify-content: center;
+        padding: 8px;
+        font-size: 12px;
+      }
+      #trustBar a {
+        color: var(--sage);
+      }
+      .drawer {
+        position: fixed;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 280px;
+        background: #fbfaf7;
+        border-left: 1px solid #eee;
+        padding: 16px;
+        transform: translateX(100%);
+        transition: 0.25s;
+        overflow-y: auto;
+      }
+      .drawer.open {
+        transform: translateX(0);
+      }
+      .drawer h3 {
+        margin-top: 0;
+        font-size: 15px;
+      }
+      .fact {
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 8px;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      .fact .status {
+        float: right;
+        font-size: 11px;
+        color: #888;
+      }
+      #profileToggle {
+        position: fixed;
+        right: 14px;
+        top: 14px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 16px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .signupCard {
+        background: #f4f1ea;
+        border-radius: 12px;
+        padding: 14px;
+        margin: 10px 0;
+        font-size: 13.5px;
+      }
+      .signupCard input {
+        width: 100%;
+        margin: 5px 0;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      .signupCard button {
+        margin-top: 6px;
+        width: 100%;
+        padding: 9px;
+        background: var(--sage);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+      }
+      #staffView {
+        max-width: 640px;
+        margin: 20px auto;
+        font-size: 14px;
+      }
+      .leadrow {
+        border-bottom: 1px solid #eee;
+        padding: 8px 0;
+        display: flex;
+        justify-content: space-between;
+      }
+      nav.tabs {
+        text-align: center;
+        padding: 8px;
+        font-size: 12px;
+      }
+      nav.tabs a {
+        margin: 0 8px;
+        color: var(--sage);
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="tabs">
+      <a href="#" onclick="showView('chat')">Patient / Guest</a> ·
+      <a href="#" onclick="showView('staff')">Staff view</a>
+    </nav>
+
+    <main id="chatView">
+      <header>
+        <div class="dot"></div>
+        Nightingale — Sunway Women's Health
+      </header>
+      <div id="trustBar">
+        <a href="#" onclick="askTrust()">Is this a real doctor?</a>
+      </div>
+      <div id="thread"></div>
+      <footer>
+        <div class="emergency">
+          If this is an emergency, exit Nightingale and dial 999 for Emergency
+          Services.
+        </div>
+        <div class="inputrow">
+          <input
+            id="msgInput"
+            type="text"
+            placeholder="Type a message…"
+            onkeydown="if (event.key === 'Enter') sendMsg();"
+          />
+          <button class="send" onclick="sendMsg()">Send</button>
+        </div>
+      </footer>
+    </main>
+    <button id="profileToggle" onclick="toggleDrawer()" style="display: none">
+      Profile
+    </button>
+    <div class="drawer" id="drawer">
+      <h3>Your profile</h3>
+      <div id="factList"></div>
+    </div>
+
+    <div id="staffView" style="display: none">
+      <h2>Warm leads & compassion queue</h2>
+      <div>
+        <input id="staffName" placeholder="staff name (try: dr_lim)" />
+        <input
+          id="staffPass"
+          placeholder="password (demo1234)"
+          type="password"
+        />
+        <button onclick="staffLogin()">Log in</button>
+      </div>
+      <div id="compassionBox"></div>
+      <div id="leadsBox"></div>
+    </div>
+
+    <script>
+      let leadId = null,
+        patientSessionId = null,
+        patientToken = null,
+        staffToken = null,
+        lastTrigger = null;
+
+      function showView(v) {
+        document.getElementById("chatView").style.display =
+          v === "chat" ? "flex" : "none";
+        document.getElementById("staffView").style.display =
+          v === "staff" ? "block" : "none";
+      }
+      function addBubble(text, who, meta, citation) {
+        const t = document.getElementById("thread");
+        if (meta) {
+          const m = document.createElement("div");
+          m.className = "meta";
+          m.textContent = meta;
+          t.appendChild(m);
+        }
+        const b = document.createElement("div");
+        b.className = "bubble " + (who === "me" ? "me" : "them");
+        b.textContent = text;
+        t.appendChild(b);
+        if (citation) {
+          const c = document.createElement("div");
+          c.className = "citation";
+          c.textContent = "Source: " + citation;
+          t.appendChild(c);
+        }
+        t.scrollTop = t.scrollHeight;
+      }
+
+      // bootstrap a guest LeadSession as if the user clicked an IG comment reply
+      (async function start() {
+        const r = await fetch("/api/lead/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_channel: "instagram_comment",
+            context: "egg freezing",
+          }),
+        });
+        const d = await r.json();
+        leadId = d.lead_session_id;
+        addBubble(d.greeting, "them");
+      })();
+
+      async function askTrust() {
+        addBubble("Are you a real doctor?", "me");
+        const r = await fetch(`/api/lead/${leadId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Are you a real doctor?" }),
+        });
+        const d = await r.json();
+        addBubble(d.reply, "them");
+      }
+
+      async function sendMsg() {
+        const input = document.getElementById("msgInput");
+        const text = input.value.trim();
+        if (!text) return;
+        addBubble(text, "me");
+        input.value = "";
+
+        if (!patientToken) {
+          // still a guest
+          const r = await fetch(`/api/lead/${leadId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text }),
+          });
+          const d = await r.json();
+          addBubble(d.reply, "them");
+          if (d.value_event === "education") {
+            maybeOfferSignup();
+          }
+        } else {
+          const r = await fetch(`/api/patient/${patientSessionId}/message`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + patientToken,
+            },
+            body: JSON.stringify({ message: text }),
+          });
+          const d = await r.json();
+          addBubble(
+            d.reply,
+            "them",
+            `risk: ${d.risk_level} (${d.confidence} confidence) — ${d.risk_reason}`,
+            d.citation,
+          );
+          lastTrigger = d.triggering_message_id;
+          if (d.escalation_required) {
+            const btn = document.createElement("button");
+            btn.className = "escalate-btn";
+            btn.textContent = "Send to Nurse/Clinic";
+            btn.onclick = sendEscalation;
+            document.getElementById("thread").appendChild(btn);
+          }
+          loadProfile();
+        }
+      }
+
+      let signupOffered = false;
+      function maybeOfferSignup() {
+        if (signupOffered) return;
+        signupOffered = true;
+        const t = document.getElementById("thread");
+        const card = document.createElement("div");
+        card.className = "signupCard";
+        card.innerHTML = `Want me to email you a summary of this conversation plus 6 questions people often forget to ask the doctor?<br>
+    <input id="su_email" placeholder="email"><input id="su_phone" placeholder="phone">
+    <input id="su_pass" placeholder="create a password" type="password">
+    <label style="font-size:12px"><input type="checkbox" id="su_marketing"> also send me occasional clinic updates</label>
+    <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
+        t.appendChild(card);
+      }
+      async function doSignup() {
+        const body = {
+          lead_session_id: leadId,
+          email: document.getElementById("su_email").value,
+          phone: document.getElementById("su_phone").value,
+          password: document.getElementById("su_pass").value,
+          marketing_consent: document.getElementById("su_marketing").checked,
+        };
+        const r = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        patientToken = d.token;
+        patientSessionId = d.patient_session_id;
+        document.getElementById("profileToggle").style.display = "block";
+        addBubble(
+          "You're verified — everything you told me is already in your profile. Let's continue.",
+          "them",
+        );
+        loadProfile();
+      }
+
+      function toggleDrawer() {
+        document.getElementById("drawer").classList.toggle("open");
+      }
+      async function loadProfile() {
+        const r = await fetch(`/api/patient/${patientSessionId}/profile`, {
+          headers: { Authorization: "Bearer " + patientToken },
+        });
+        const items = await r.json();
+        const box = document.getElementById("factList");
+        box.innerHTML = "";
+        items.forEach((i) => {
+          const d = document.createElement("div");
+          d.className = "fact";
+          d.innerHTML = `<b>${i.fact_type}</b>: ${i.value} <span class="status">${i.status}</span>`;
+          box.appendChild(d);
+        });
+      }
+      async function sendEscalation() {
+        const r = await fetch(`/api/patient/${patientSessionId}/escalate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + patientToken,
+          },
+          body: JSON.stringify({ triggering_message_id: lastTrigger }),
+        });
+        const d = await r.json();
+        addBubble(
+          `Sent to the clinic. Expected response: ${d.expected_response}. You can keep chatting with me in the meantime.`,
+          "them",
+        );
+      }
+
+      async function staffLogin() {
+        const r = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: document.getElementById("staffName").value,
+            password: document.getElementById("staffPass").value,
+          }),
+        });
+        const d = await r.json();
+        if (d.token) {
+          staffToken = d.token;
+          loadWarmLeads();
+        }
+      }
+      async function loadWarmLeads() {
+        const r = await fetch("/api/staff/warm-leads", {
+          headers: { Authorization: "Bearer " + staffToken },
+        });
+        const d = await r.json();
+        document.getElementById("compassionBox").innerHTML =
+          "<h3>Compassion priority (never sales-ranked)</h3>" +
+            d.compassion_priority_queue
+              .map(
+                (c) =>
+                  `<div class="leadrow"><span>${c.summary.join("; ")}</span></div>`,
+              )
+              .join("") || "<p>None pending</p>";
+        document.getElementById("leadsBox").innerHTML =
+          "<h3>Warm leads</h3>" +
+          d.warm_leads
+            .map(
+              (l) =>
+                `<div class="leadrow"><span>${l.channel} — ${l.top_concern || ""}</span><b>${l.score}</b></div>`,
+            )
+            .join("");
+      }
+    </script>
+  </body>
+</html>
