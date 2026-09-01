@@ -1,0 +1,21 @@
+========================================================================
+NIGHTINGALE CARE PWA - THIRD-PARTY ATTRIBUTION & LICENSES
+========================================================================
+
+1. Core Framework & Runtime
+   - Next.js / Node.js (MIT License) - https://github.com/vercel/next.js
+   - Fastify / Express (MIT License) - https://github.com/fastify/fastify
+
+2. Database & ORM
+   - Prisma ORM / PostgreSQL / SQLite (Apache 2.0) - https://github.com/prisma/prisma
+
+3. AI & Natural Language Processing
+   - OpenAI API / Anthropic Claude API (Commercial License)
+   - LangChain Core (MIT License) - https://github.com/langchain-ai/langchain
+
+4. UI & Styling
+   - Tailwind CSS (MIT License) - https://github.com/tailwindlabs/tailwindcss
+   - Lucide Icons (ISC License) - https://github.com/lucide-icons/lucide
+
+5. Testing & Validation
+   - Pytest / Jest (MIT License)
