@@ -609,11 +609,12 @@
             d.citation,
           );
           lastTrigger = d.triggering_message_id;
-          if (d.escalation_required) {
+          if (d.escalation_required === true) {
             const btn = document.createElement("button");
+            btn.type = "button";
             btn.className = "escalate-btn";
             btn.textContent = "Send to Nurse/Clinic";
-            btn.onclick = sendEscalation;
+            btn.onclick = () => sendEscalation();
             document.getElementById("thread").appendChild(btn);
           }
           loadProfile();
@@ -743,6 +744,7 @@
           box.appendChild(d);
         });
       }
+
       async function sendEscalation() {
         const r = await fetch(`/api/patient/${patientSessionId}/escalate`, {
           method: "POST",
@@ -752,13 +754,22 @@
           },
           body: JSON.stringify({ triggering_message_id: lastTrigger }),
         });
+
         const d = await r.json();
+
+        if (!r.ok) {
+          addBubble(
+            d.error || "I couldn't send this to the clinic. Please try again.",
+            "them",
+          );
+          return;
+        }
+
         addBubble(
           `Sent to the clinic. Expected response: ${d.expected_response}. You can keep chatting with me in the meantime.`,
           "them",
         );
       }
-
       async function staffLogin() {
         const r = await fetch("/api/auth/login", {
           method: "POST",
