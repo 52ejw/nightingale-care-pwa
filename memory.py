@@ -12,6 +12,10 @@ ALLERGY_PATTERN = re.compile(r"allergic to\s+([A-Za-z][\w-]{2,20})", re.IGNORECA
 SYMPTOM_PATTERN = re.compile(
     r"\b(pain|ache|bleeding|fever|nausea|dizziness|cramping|discharge|swelling)\b", re.IGNORECASE
 )
+TIMELINE_PATTERN = re.compile(
+    r"\b(?:for|since)\s+(?:\d+\s+(?:day|week|month|hour)s?|yesterday|last night|last week|this morning)\b",
+    re.IGNORECASE,
+)
 
 def extract_facts(message_id: str, text: str) -> list[dict]:
     """Returns possible facts; the mutation logic decides how they are added or updated in memory."""
@@ -33,11 +37,14 @@ def extract_facts(message_id: str, text: str) -> list[dict]:
             "status": "active", "provenance_pointer": message_id, "updated_at": now,
         })
 
-    for m in SYMPTOM_PATTERN.finditer(text):
-        facts.append({
-            "fact_type": "symptom", "value": m.group(1).lower(),
-            "status": "active", "provenance_pointer": message_id, "updated_at": now,
-        })
+        timeline_match = TIMELINE_PATTERN.search(text)
+        for m in SYMPTOM_PATTERN.finditer(text):
+            symptom = m.group(1).lower()
+            value = f"{symptom} ({timeline_match.group(0).strip()})" if timeline_match else symptom
+            facts.append({
+                "fact_type": "symptom", "value": value,
+                "status": "active", "provenance_pointer": message_id, "updated_at": now,
+            })
 
     # First substantive sentence, if nothing more specific was extracted, becomes chief complaint
     if not facts and len(text.strip()) > 4:

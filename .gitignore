@@ -28,4 +28,4 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
-EOF
+EOF.env

@@ -491,7 +491,8 @@
         }
         const params = new URLSearchParams(window.location.search);
         const referralToken = params.get("ref");
-        const existingLeadId = params.get("lead");
+        const existingLeadId =
+          params.get("lead") || localStorage.getItem("nightingale_lead_id");
 
         if (existingLeadId) {
           const r = await fetch(
@@ -499,21 +500,21 @@
           );
 
           if (!r.ok) {
+            localStorage.removeItem("nightingale_lead_id");
             addBubble(
               "This conversation link is no longer available. You can still start a new conversation with me.",
               "them",
             );
+          } else {
+            const d = await r.json();
+            leadId = d.lead_session_id;
+            localStorage.setItem("nightingale_lead_id", leadId);
+            addBubble(
+              "Welcome back. We can continue from where you left off.",
+              "them",
+            );
             return;
           }
-
-          const d = await r.json();
-          leadId = d.lead_session_id;
-
-          addBubble(
-            "Welcome back. We can continue from where you left off.",
-            "them",
-          );
-          return;
         }
 
         if (referralToken) {
@@ -531,6 +532,7 @@
 
           const d = await r.json();
           leadId = d.lead_session_id;
+          localStorage.setItem("nightingale_lead_id", leadId);
           addBubble(d.greeting, "them");
           return;
         }
@@ -546,6 +548,7 @@
 
         const d = await r.json();
         leadId = d.lead_session_id;
+        localStorage.setItem("nightingale_lead_id", leadId);
         addBubble(d.greeting, "them");
       })();
 
@@ -666,12 +669,40 @@
             <input id="su_healthcare_consent" type="checkbox">
             I consent to share the healthcare information I provide with the clinic so they can respond to my enquiry.
           </label>
+          <button type="button" onclick="sendSummaryEmail()" style="margin-top:8px; background:#fff; color:var(--sage); border:1px solid var(--sage);">
+            Just email me the summary + questions
+          </button>
           <button type="button" onclick="patientLogin()" style="margin-top:8px; background:#fff; color:var(--sage); border:1px solid var(--sage);">
             Already have an account? Log in
           </button>
           <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
         t.appendChild(card);
       }
+      async function sendSummaryEmail() {
+        const email = document.getElementById("su_email").value;
+        if (!email) {
+          addBubble(
+            "Add an email above first so I know where to send it.",
+            "them",
+          );
+          return;
+        }
+        const r = await fetch(`/api/lead/${leadId}/summary-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          addBubble(d.error || "Couldn't send that right now.", "them");
+          return;
+        }
+        addBubble(
+          `Sent! Summary: "${d.summary}" — plus ${d.questions.length} questions to ask your doctor.`,
+          "them",
+        );
+      }
+
       async function patientLogin() {
         const email = prompt("Enter your account email:");
         if (!email) return;

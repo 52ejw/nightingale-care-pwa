@@ -5,10 +5,20 @@ consent and needs to be stored, it is encrypted and never written to logs
 in plain text.
 """
 import re
+import os
 from cryptography.fernet import Fernet
 
-# In production this key comes from a secrets manager, rotated, not hardcoded.
-_FERNET = Fernet(Fernet.generate_key())
+# Key must be persisted via env var — otherwise every encrypted guest PHI
+# blob becomes permanently unrecoverable the moment the process restarts.
+_FERNET_KEY = os.environ.get("FERNET_KEY")
+if not _FERNET_KEY:
+    _FERNET_KEY = Fernet.generate_key().decode()
+    print(
+        "WARNING: FERNET_KEY not set in environment — using an ephemeral key. "
+        "Encrypted guest PHI will be unrecoverable after this process restarts. "
+        "Set FERNET_KEY for any non-throwaway run."
+    )
+_FERNET = Fernet(_FERNET_KEY.encode() if isinstance(_FERNET_KEY, str) else _FERNET_KEY)
 
 PATTERNS = {
     "IC_NUMBER": re.compile(r"\b\d{6}-?\d{2}-?\d{4}\b|\b[A-Z]\d{7}[A-Z]\b"),

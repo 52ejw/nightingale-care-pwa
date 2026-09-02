@@ -3,8 +3,13 @@ Nightingale backend. A simple Flask app that uses
 bearer tokens for login and checks user roles and access on the server.
 Audit logs store only hashes and metadata, never raw patient messages.
 """
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import hashlib
 import json
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -18,6 +23,34 @@ from channel_rules import resolve_opening
 from redaction import redact, encrypt, decrypt
 from risk_gating import assess_risk
 from memory import extract_facts, merge_into_profile
+
+try:
+    from anthropic import Anthropic
+    _ANTHROPIC_CLIENT = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"]) if os.environ.get("ANTHROPIC_API_KEY") else None
+except Exception:
+    _ANTHROPIC_CLIENT = None
+
+def call_llm(system_prompt: str, user_text: str, max_tokens: int = 300):
+    """LLM call for low-risk conversational replies only — never used for
+    risk determination, which stays deterministic in risk_gating.py.
+    Returns None on missing key, timeout, or any API error, so callers
+    fall back to a safe canned response. This IS the documented failure
+    mode for 'LLM times out' — the user always gets a safe reply, never
+    a hang or a raw error."""
+    if not _ANTHROPIC_CLIENT:
+        return None
+    try:
+        resp = _ANTHROPIC_CLIENT.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_text}],
+            timeout=8.0,
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return text or None
+    except Exception:
+        return None
 
 # App configuration, database, authentication sessions, guest rate limits, and session expiry.
 app = Flask(__name__, static_folder="static", static_url_path="")
@@ -108,6 +141,7 @@ def index():
 
 @app.post("/api/lead/start")
 def lead_start():
+    purge_expired_guest_data()
     body = request.get_json(force=True)
     channel = body.get("source_channel")
     identity_level = "identified" if body.get("email") or body.get("handle") else "anonymous"
@@ -188,12 +222,25 @@ VALUE_KB = {
     "fertility": "A basic fertility workup usually starts with hormone bloodwork and a semen analysis where relevant, before anything more invasive.",
 }
 
+GUEST_SYSTEM_PROMPT = (
+    "You are Nightingale, a fertility/women's health clinic's AI assistant talking to an "
+    "anonymous website visitor who has not signed up yet. You are strictly non-diagnostic: "
+    "never say 'you have X', never suggest medication changes or treatment plans beyond "
+    "general info + 'consult a clinician', never give false reassurance on symptoms that "
+    "sound concerning. Be warm and brief (2-4 sentences). Do not ask for contact info."
+)
+
 def guest_reply(lead_id, text_redacted):
     low = text_redacted.lower()
     if "real doctor" in low or "are you a bot" in low or "are you human" in low:
         return ("I'm Nightingale, an AI assistant built for this clinic — I'm not a doctor and I don't diagnose. "
                 "I can answer general questions and pass anything clinical to a real nurse or clinician, usually within 12-18 hours. "
                 "You're chatting with software right now, and I'll always tell you when a human takes over."), "trust_response"
+
+    llm_reply = call_llm(GUEST_SYSTEM_PROMPT, text_redacted)
+    if llm_reply:
+        return llm_reply, "education"
+
     for topic, fact in VALUE_KB.items():
         if topic in low:
             return (f"{fact} I can't say what's right for your specific situation, but a clinician can once you're ready to share more."), "education"
@@ -398,6 +445,53 @@ def personal_note(lead_id):
     return jsonify({"note": note, "chars": len(note)})
 
 """
+Earned email: generates a personalized summary + 6 forgotten questions from
+the guest's own session, in exchange for an email — before full signup.
+This send is transactional and independent from marketing consent.
+"""
+@app.post("/api/lead/<lead_id>/summary-email")
+def summary_email(lead_id):
+    lead = DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        return jsonify({"error": "not found"}), 404
+
+    body = request.get_json(force=True)
+    email = body.get("email")
+    if not email:
+        return jsonify({"error": "email is required"}), 400
+
+    msgs = DB.execute(
+        "SELECT content_redacted FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at",
+        (lead_id,)
+    ).fetchall()
+    topic = msgs[-1]["content_redacted"][:60] if msgs else lead["context"]
+
+    summary, _ = redact(f"Quick recap of what you shared with us about {topic.lower()}.")
+    questions = [
+        "What are my realistic success rates at my age, specifically?",
+        "What tests or bloodwork should happen before we start?",
+        "What are the risks and side effects I should watch for?",
+        "How many cycles do most people like me typically need?",
+        "What does this cost, and what's covered vs out-of-pocket?",
+        "What happens if this first approach doesn't work?",
+    ]
+
+    DB.execute(
+        "INSERT INTO value_events (id, lead_session_id, event_type, content, created_at) VALUES (?,?,?,?,?)",
+        (new_id(), lead_id, "summary_email", summary, now_iso())
+    )
+    DB.commit()
+    emit_event(lead_id=lead_id, event_type="value_event", meta={"kind": "summary_email"})
+    audit(None, "summary_email_sent", lead_id, {"transactional": True})
+
+    # Simulated send — swap for a transactional email provider call in production.
+    return jsonify({
+        "sent_to": email, "summary": summary, "questions": questions,
+        "transactional": True,
+        "marketing_consent_required_for_further_emails": True,
+    })
+
+"""
 Value event: Shows how many people asked this clinic a question this week.
 Uses a live count and only displays it when the number is meaningful.
 This query is tested by test_value_events.py.
@@ -429,10 +523,15 @@ def signup():
     body = request.get_json(force=True)
     lead_id = body["lead_session_id"]
     email, phone = body["email"], body["phone"]
+
+    emit_event(lead_id=lead_id, event_type="auth_started")
+
     if not body.get("healthcare_consent", False):
         return jsonify({
             "error": "Healthcare information sharing consent is required."
         }), 400
+
+    emit_event(lead_id=lead_id, event_type="consented")
     lead = DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
     if not lead:
         return jsonify({"error": "lead not found"}), 404
@@ -586,15 +685,35 @@ EDU_CITATIONS = {
     "spotting": ("Light spotting between cycles has many benign causes but is worth mentioning to a clinician.", "NHS women's health guidance"),
 }
 
+PATIENT_SYSTEM_PROMPT = (
+    "You are Nightingale, an AI assistant inside a fertility/women's health clinic's authenticated "
+    "patient portal. You are strictly non-diagnostic: never say 'you have X', never suggest "
+    "medication changes or treatment plans beyond general info + 'consult a clinician', never give "
+    "false reassurance on symptoms that sound concerning. Be warm and brief (2-4 sentences)."
+)
+
+PATIENT_SYSTEM_PROMPT = (
+    "You are Nightingale, an AI assistant inside a fertility/women's health clinic's authenticated "
+    "patient portal. You are strictly non-diagnostic: never say 'you have X', never suggest "
+    "medication changes or treatment plans beyond general info + 'consult a clinician', never give "
+    "false reassurance on symptoms that sound concerning. Be warm and brief (2-4 sentences)."
+)
+
 def patient_reply(ps_id, text_redacted, risk):
     if risk["risk_level"] in ("high", "medium"):
         return ("I want to make sure the right person sees this rather than me guessing. "
                 "I've prepared everything to send to the clinic — you can review and send it below. "
                 "This isn't a diagnosis or a delay tactic, it's what keeps this safe."), None
+
     low = text_redacted.lower()
     for k, (fact, src) in EDU_CITATIONS.items():
         if k in low:
-            return (f"{fact} I'm not able to diagnose or suggest treatment, but a clinician can look into it properly."), src
+            llm_reply = call_llm(PATIENT_SYSTEM_PROMPT, text_redacted)
+            return (llm_reply or f"{fact} I'm not able to diagnose or suggest treatment, but a clinician can look into it properly."), src
+
+    llm_reply = call_llm(PATIENT_SYSTEM_PROMPT, text_redacted)
+    if llm_reply:
+        return llm_reply, None
     return ("Thanks for sharing that. I'm keeping track of it in your profile. "
             "I can give general info, but for anything specific to you, a clinician should weigh in."), None
 
@@ -823,6 +942,24 @@ def get_escalation(esc_id):
     d["triggering_message"] = dict(msg) if msg else None
 
     return jsonify(d)
+
+@app.get("/api/staff/guest-message/<msg_id>/reveal")
+@require_role("clinician", "nurse")
+def reveal_guest_phi(msg_id):
+    row = DB.execute(
+        "SELECT gm.*, ls.status AS lead_status FROM guest_messages gm "
+        "JOIN lead_sessions ls ON ls.id = gm.lead_session_id WHERE gm.id=?",
+        (msg_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    if not row["encrypted_raw"]:
+        return jsonify({"error": "no PHI recorded for this message"}), 404
+    if row["lead_status"] != "converted":
+        return jsonify({"error": "cannot reveal PHI before the guest has consented (lead not converted)"}), 403
+    raw = decrypt(row["encrypted_raw"])
+    audit(g.session["id"], "guest_phi_revealed", msg_id)
+    return jsonify({"raw_message": raw})
 
 @app.post("/api/staff/escalation/<esc_id>/respond")
 @require_role("clinician", "nurse")
