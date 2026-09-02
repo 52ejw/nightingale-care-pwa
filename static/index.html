@@ -568,10 +568,10 @@
         addBubble(text, "me");
         input.value = "";
 
-        const isHighRisk =
-          /chest pain|difficulty breathing|can't breathe|heavy bleeding|bleeding heavily|hurt myself|kill myself|suicide/i.test(
-            text,
-          );
+        //const isHighRisk =
+        //  /chest pain|difficulty breathing|can't breathe|heavy bleeding|bleeding heavily|hurt myself|kill myself|suicide/i.test(
+        //    text,
+        //  );
 
         if (
           !patientToken ||
@@ -593,13 +593,12 @@
           );
 
           // SHOW ESCALATION STATUS FOR HIGH-RISK MESSAGE
-          if (isHighRisk) {
+          if (d.escalation_required) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "escalate-btn";
             btn.textContent = "Sent to Nurse/Clinic";
             btn.disabled = true;
-
             document.getElementById("thread").appendChild(btn);
           }
 
@@ -834,7 +833,7 @@
                     : c.summary?.risk_reason ||
                       "Clinical concern requires review"
                 }</span>
-                <button onclick="respondToEscalation('${c.escalation_id}', this)">
+                <button onclick="viewEscalation('${c.escalation_id}')">View case</button>
                   Review / Respond
                 </button>
               </div>`,
@@ -858,29 +857,45 @@
             .join("") || '<p class="empty-state">No warm leads yet</p>') +
           "</section>";
       }
-      async function respondToEscalation(escId, button) {
-        const response = prompt("Enter clinician response:");
+      async function viewEscalation(escId) {
+        const r = await fetch(`/api/staff/escalation/${escId}`, {
+          headers: { Authorization: "Bearer " + staffToken },
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          alert(d.error || "Unable to load case.");
+          return;
+        }
 
-        if (!response || !response.trim()) return;
+        const t = d.triage_summary;
+        const panel = document.createElement("div");
+        panel.className = "case-detail";
+        panel.innerHTML = `
+    <p><b>Risk:</b> ${t.risk_level} (${t.confidence} confidence) — ${t.risk_reason}</p>
+    <p><b>Message:</b> ${d.triggering_message ? d.triggering_message.content_redacted : "(not found)"}</p>
+    <p><b>Source:</b> ${d.attribution_snapshot.source_channel || "unknown"} ${d.attribution_snapshot.campaign_id ? "/ " + d.attribution_snapshot.campaign_id : ""}</p>
+    <textarea id="resp_${escId}" placeholder="Clinician response"></textarea>
+    <button onclick="submitResponse('${escId}')">Submit response</button>
+  `;
+        document.getElementById("compassionBox").appendChild(panel);
+      }
 
+      async function submitResponse(escId) {
+        const text = document.getElementById(`resp_${escId}`).value.trim();
+        if (!text) return;
         const r = await fetch(`/api/staff/escalation/${escId}/respond`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: "Bearer " + staffToken,
           },
-          body: JSON.stringify({ response: response.trim() }),
+          body: JSON.stringify({ response: text }),
         });
-
         const d = await r.json();
-
         if (!r.ok) {
           alert(d.error || "Unable to respond to escalation.");
           return;
         }
-
-        button.disabled = true;
-        button.textContent = "Responded";
         loadWarmLeads();
       }
     </script>

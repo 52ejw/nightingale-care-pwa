@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS lead_sessions (
 CREATE TABLE IF NOT EXISTS guest_messages (
     id TEXT PRIMARY KEY, lead_session_id TEXT, sender TEXT, content_redacted TEXT,
     phi_detected INTEGER DEFAULT 0, encrypted_raw BLOB,
+    risk_level TEXT, risk_reason TEXT, confidence TEXT, risk_provenance TEXT,
     audio_transcript_id TEXT, audio_url TEXT, created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS value_events (
@@ -84,6 +85,13 @@ def init_db(path=None):
         conn.execute("ALTER TABLE patients ADD COLUMN verification_code TEXT")
     except sqlite3.OperationalError:
         pass
+
+    for col, coltype in [("risk_level", "TEXT"), ("risk_reason", "TEXT"),
+                      ("confidence", "TEXT"), ("risk_provenance", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE guest_messages ADD COLUMN {col} {coltype}")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
 

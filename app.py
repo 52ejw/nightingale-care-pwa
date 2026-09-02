@@ -252,15 +252,12 @@ def guest_message(lead_id):
 
     DB.execute(
         "INSERT INTO guest_messages "
-        "(id, lead_session_id, sender, content_redacted, phi_detected, encrypted_raw, created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "(id, lead_session_id, sender, content_redacted, phi_detected, encrypted_raw, "
+        "risk_level, risk_reason, confidence, risk_provenance, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
-            msg_id,
-            lead_id,
-            "guest",
-            redacted,
-            int(phi_found),
-            enc,
+            msg_id, lead_id, "guest", redacted, int(phi_found), enc,
+            risk["risk_level"], risk["risk_reason"], risk["confidence"], risk["risk_provenance"],
             now_iso()
         )
     )
@@ -273,6 +270,8 @@ def guest_message(lead_id):
         lead_id,
         {"phi_detected": phi_found}
     )
+
+    escalation_id = None  # stays None unless the block below sets it
 
     if risk["risk_level"] in ("high", "medium"):
         reply = (
@@ -371,10 +370,13 @@ def guest_message(lead_id):
     )
 
     return jsonify({
-        "reply": reply,
-        "value_event": event_type,
-        "trust_prompt_available": True
-    })
+    "reply": reply,
+    "value_event": event_type,
+    "trust_prompt_available": True,
+    "risk_level": risk["risk_level"],
+    "escalation_required": risk["risk_level"] in ("high", "medium"),
+    "escalation_id": escalation_id,
+})
 """
 Creates a short, personalised note based on what the user actually said.
 Limited to 240 characters as required by the brief.
@@ -806,17 +808,20 @@ def get_escalation(esc_id):
     row = DB.execute("SELECT * FROM escalations WHERE id=?", (esc_id,)).fetchone()
     if not row:
         return jsonify({"error": "not found"}), 404
-    patient_session = DB.execute(
-        "SELECT patient_id FROM patient_sessions WHERE id=?",
-        (row["patient_session_id"],)
-    ).fetchone()
-
-    if not patient_session:
-        return jsonify({"error": "not found"}), 404
     d = dict(row)
     d["triage_summary"] = json.loads(d["triage_summary"])
     d["profile_snapshot"] = json.loads(d["profile_snapshot"])
     d["attribution_snapshot"] = json.loads(d["attribution_snapshot"])
+    d["is_guest"] = d["patient_session_id"] is None
+
+    # Guest escalations point at guest_messages; patient escalations point at messages.
+    table = "guest_messages" if d["is_guest"] else "messages"
+    msg = DB.execute(
+        f"SELECT content_redacted, created_at FROM {table} WHERE id=?",
+        (d["triggering_message_id"],)
+    ).fetchone()
+    d["triggering_message"] = dict(msg) if msg else None
+
     return jsonify(d)
 
 @app.post("/api/staff/escalation/<esc_id>/respond")
