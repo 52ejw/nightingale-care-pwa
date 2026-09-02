@@ -1,21 +1,62 @@
 ========================================================================
 NIGHTINGALE CARE PWA - THIRD-PARTY ATTRIBUTION & LICENSES
 ========================================================================
+Generated from actual imports in app.py / requirements.txt / installed
+venv, not a template. Previous version of this file listed frameworks
+(Next.js, Prisma, LangChain, Tailwind, etc.) not present in this
+codebase — replaced below with what's really here.
 
-1. Core Framework & Runtime
-   - Next.js / Node.js (MIT License) - https://github.com/vercel/next.js
-   - Fastify / Express (MIT License) - https://github.com/fastify/fastify
+1. Web framework
+   - Flask 3.0.3 (BSD-3-Clause) — https://github.com/pallets/flask
+   - Werkzeug 3.1.8 (BSD-3-Clause) — https://github.com/pallets/werkzeug
+     (Flask's WSGI toolkit; also used directly here for
+     check_password_hash / generate_password_hash)
 
-2. Database & ORM
-   - Prisma ORM / PostgreSQL / SQLite (Apache 2.0) - https://github.com/prisma/prisma
+2. Database
+   - SQLite (Public Domain) — https://www.sqlite.org
+   - sqlite3 — Python standard library (PSF License), no separate install
 
-3. AI & Natural Language Processing
-   - OpenAI API / Anthropic Claude API (Commercial License)
-   - LangChain Core (MIT License) - https://github.com/langchain-ai/langchain
+3. Security / cryptography
+   - cryptography 42.0.5 (Apache-2.0 OR BSD-3-Clause) —
+     https://github.com/pyca/cryptography
+     (Fernet symmetric encryption for guest PHI-at-rest, redaction.py)
 
-4. UI & Styling
-   - Tailwind CSS (MIT License) - https://github.com/tailwindlabs/tailwindcss
-   - Lucide Icons (ISC License) - https://github.com/lucide-icons/lucide
+4. Configuration
+   - python-dotenv 1.2.3 (BSD-3-Clause) —
+     https://github.com/theskumar/python-dotenv
+     (loads .env; imported in app.py but currently MISSING from
+     requirements.txt — see README)
 
-5. Testing & Validation
-   - Pytest / Jest (MIT License)
+5. AI / LLM
+   - anthropic (Python SDK) (MIT License) —
+     https://github.com/anthropics/anthropic-sdk-python
+     (installed: 1.3.0; requirements.txt currently pins 0.39.0 —
+     these do not match, see README)
+   - Underlying model: Claude (claude-sonnet-4-6), accessed via the
+     Anthropic API. This is a hosted commercial service, not an
+     open-source component — usage is governed by Anthropic's API
+     Terms of Service, not an OSS license.
+     https://www.anthropic.com/legal/consumer-terms
+
+6. Testing
+   - pytest 9.1.1 (MIT License) — https://github.com/pytest-dev/pytest
+     (dev dependency only; also currently missing from
+     requirements.txt — see README)
+
+7. Frontend
+   - static/index.html: vanilla HTML/CSS/JavaScript, no framework,
+     no external UI library, no third-party JS dependency, no CDN
+     imports. No attribution required beyond this project's own
+     license.
+
+------------------------------------------------------------------------
+Notes
+------------------------------------------------------------------------
+- No PHI, patient data, or clinical content from any third party is
+  included in this repository. Redaction and encryption logic is
+  original to this project (redaction.py) and does not depend on an
+  external PHI-detection library or dataset.
+- requirements.txt should be updated to include python-dotenv and
+  pytest, and the anthropic pin reconciled with the installed version,
+  before this is treated as a reproducible build (see README, Setup).
+========================================================================
