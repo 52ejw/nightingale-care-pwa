@@ -488,6 +488,8 @@
         if (savedPatientToken && savedPatientSessionId) {
           patientToken = savedPatientToken;
           patientSessionId = savedPatientSessionId;
+          document.getElementById("profileToggle").style.display = "block";
+          loadProfile();
         }
         const params = new URLSearchParams(window.location.search);
         const referralToken = params.get("ref");
@@ -769,10 +771,36 @@
           return;
         }
         const d = await r.json();
-        console.log("SIGNUP RESPONSE:", d);
-        patientToken = d.token;
+
+        // Signup only creates the account and sends a verification code —
+        // it does NOT return a token yet. Ask for the code, then verify.
+        const code = prompt(
+          "We've sent a verification code — enter it here to finish setting up your secure profile:",
+          d.verification_code, // dev convenience only — remove before this ever ships
+        );
+
+        const v = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: d.email,
+            code: code,
+            lead_session_id: d.lead_session_id,
+          }),
+        });
+        if (!v.ok) {
+          const err = await v.json();
+          addBubble(
+            err.error || "That code didn't match. Please try again.",
+            "them",
+          );
+          return;
+        }
+        const vd = await v.json();
+
+        patientToken = vd.token;
         localStorage.setItem("nightingale_patient_token", patientToken);
-        patientSessionId = d.patient_session_id;
+        patientSessionId = vd.patient_session_id;
         localStorage.setItem(
           "nightingale_patient_session_id",
           patientSessionId,

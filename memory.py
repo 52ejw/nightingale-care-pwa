@@ -37,14 +37,14 @@ def extract_facts(message_id: str, text: str) -> list[dict]:
             "status": "active", "provenance_pointer": message_id, "updated_at": now,
         })
 
-        timeline_match = TIMELINE_PATTERN.search(text)
-        for m in SYMPTOM_PATTERN.finditer(text):
-            symptom = m.group(1).lower()
-            value = f"{symptom} ({timeline_match.group(0).strip()})" if timeline_match else symptom
-            facts.append({
-                "fact_type": "symptom", "value": value,
-                "status": "active", "provenance_pointer": message_id, "updated_at": now,
-            })
+    timeline_match = TIMELINE_PATTERN.search(text)
+    for m in SYMPTOM_PATTERN.finditer(text):
+        symptom = m.group(1).lower()
+        value = f"{symptom} ({timeline_match.group(0).strip()})" if timeline_match else symptom
+        facts.append({
+            "fact_type": "symptom", "value": value,
+            "status": "active", "provenance_pointer": message_id, "updated_at": now,
+        })
 
     # First substantive sentence, if nothing more specific was extracted, becomes chief complaint
     if not facts and len(text.strip()) > 4:
