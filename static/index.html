@@ -564,18 +564,50 @@
         const input = document.getElementById("msgInput");
         const text = input.value.trim();
         if (!text) return;
+
         addBubble(text, "me");
         input.value = "";
 
-        if (!patientToken) {
-          // still a guest
+        const isHighRisk =
+          /chest pain|difficulty breathing|can't breathe|heavy bleeding|bleeding heavily|hurt myself|kill myself|suicide/i.test(
+            text,
+          );
+
+        if (
+          !patientToken ||
+          !patientSessionId ||
+          patientToken === "undefined" ||
+          patientSessionId === "undefined"
+        ) {
+          // Guest / authentication not established yet
           const r = await fetch(`/api/lead/${leadId}/message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ message: text }),
           });
+
           const d = await r.json();
-          addBubble(d.reply, "them");
+          addBubble(
+            d.reply || "I want to make sure the right person sees this.",
+            "them",
+          );
+
+          // SHOW ESCALATION ACTION FOR HIGH-RISK MESSAGE
+          if (isHighRisk) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "escalate-btn";
+            btn.textContent = "Send to Nurse/Clinic";
+
+            btn.onclick = function () {
+              // There is no patient session yet, so securely continue through signup.
+              maybeOfferSignup();
+              btn.remove();
+            };
+
+            document.getElementById("thread").appendChild(btn);
+          }
+
           if (d.value_event === "education") {
             maybeOfferSignup();
           }
@@ -588,35 +620,36 @@
             },
             body: JSON.stringify({ message: text }),
           });
-          const d = await r.json();
-          if (r.status === 401) {
-            localStorage.removeItem("nightingale_patient_token");
-            localStorage.removeItem("nightingale_patient_session_id");
-            patientToken = null;
-            patientSessionId = null;
 
+          const d = await r.json();
+
+          if (d.error) {
+            console.error("PATIENT MESSAGE ERROR:", d);
             addBubble(
-              "Your session has expired. Please log in again to continue securely.",
+              "I couldn't connect your secure session. Please log in again.",
               "them",
             );
-            maybeOfferSignup();
             return;
           }
+
           addBubble(
             d.reply,
             "them",
             `risk: ${d.risk_level} (${d.confidence} confidence) — ${d.risk_reason}`,
             d.citation,
           );
+
           lastTrigger = d.triggering_message_id;
-          if (d.escalation_required === true) {
+
+          if (d.escalation_required) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "escalate-btn";
             btn.textContent = "Send to Nurse/Clinic";
-            btn.onclick = () => sendEscalation();
+            btn.onclick = sendEscalation;
             document.getElementById("thread").appendChild(btn);
           }
+
           loadProfile();
         }
       }
