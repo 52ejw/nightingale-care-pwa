@@ -30,20 +30,56 @@ def _seed_staff(appmodule, name, role):
                           (name, name, role, generate_password_hash("pw")))
     appmodule.DB.commit()
 
+def _signup_verified(appmodule, c, lead_id, email, phone):
+    r = c.post(
+        "/api/auth/signup",
+        json={
+            "lead_session_id": lead_id,
+            "email": email,
+            "phone": phone,
+            "password": "pw123456",
+            "healthcare_consent": True,
+        },
+    )
+
+    data = r.get_json()
+    assert data["verification_required"] is True
+
+    v = c.post(
+        "/api/auth/verify",
+        json={
+            "email": email,
+            "code": data["verification_code"],
+            "lead_session_id": lead_id,
+        },
+    )
+
+    assert v.status_code == 200
+
+    result = v.get_json()
+    assert result["verified"] is True
+
+    return result
+
 def test_guest_to_patient_conversion(fresh_db):
     c = client(fresh_db)
     r = c.post('/api/lead/start', json={"source_channel": "instagram_ad_click", "campaign_id": "ivf_over40"})
     lead_id = r.get_json()["lead_session_id"]
     c.post(f'/api/lead/{lead_id}/message', json={"message": "I'm worried about my fertility at 42"})
-    r = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "a@x.com",
-                                          "phone": "0123456789", "password": "pw123456", "healthcare_consent": True})
-    ps_id = r.get_json()["patient_session_id"]
-    profile = c.get(f'/api/patient/{ps_id}/profile',
-                     headers={"Authorization": "Bearer " + r.get_json()["token"]}).get_json()
+
+    r = _signup_verified(fresh_db, c, lead_id, "a@x.com", "0123456789")
+    ps_id = r["patient_session_id"]
+
+    profile = c.get(
+        f'/api/patient/{ps_id}/profile',
+        headers={"Authorization": "Bearer " + r["token"]}
+    ).get_json()
+
     assert any("fertility" in p["value"].lower() or p["fact_type"] == "chief_complaint" for p in profile)
+
     lead = fresh_db.DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
     assert lead["campaign_id"] == "ivf_over40" and lead["status"] == "converted"
-
+    
 def test_value_events(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
@@ -59,8 +95,7 @@ def test_value_events(fresh_db):
 def test_escalation_payload(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "google_ad_click"}).get_json()["lead_session_id"]
-    r = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "b@x.com",
-                                          "phone": "0123456789", "password": "pw123456","healthcare_consent": True}).get_json()
+    r = _signup_verified(fresh_db, c, lead_id, "b@x.com", "0123456789")
     hdr = {"Authorization": "Bearer " + r["token"]}
     ps_id = r["patient_session_id"]
     m = c.post(f'/api/patient/{ps_id}/message', json={"message": "I have crushing chest pain"}, headers=hdr).get_json()
@@ -74,8 +109,7 @@ def test_risk_escalation(fresh_db):
     assert r["risk_level"] == "high"
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
-    sr = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "c@x.com",
-                                           "phone": "012", "password": "pw123456","healthcare_consent": True}).get_json()
+    sr = _signup_verified(fresh_db, c, lead_id, "c@x.com", "012")
     hdr = {"Authorization": "Bearer " + sr["token"]}
     m = c.post(f'/api/patient/{sr["patient_session_id"]}/message',
                json={"message": "I have crushing chest pain."}, headers=hdr).get_json()
@@ -90,8 +124,7 @@ def test_memory_mutation(fresh_db):
     # second turn alone won't name the drug again in real chat; simulate the mutate call directly
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
-    sr = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "d@x.com",
-                                           "phone": "012", "password": "pw123456","healthcare_consent": True}).get_json()
+    sr = _signup_verified(fresh_db, c, lead_id, "d@x.com", "012")
     hdr = {"Authorization": "Bearer " + sr["token"]}
     ps_id = sr["patient_session_id"]
     c.post(f'/api/patient/{ps_id}/message', json={"message": "I take Advil."}, headers=hdr)
@@ -116,13 +149,25 @@ def test_redaction(fresh_db):
 def test_access_control(fresh_db):
     c = client(fresh_db)
     _seed_staff(fresh_db, "nurse1", "nurse")
-    lead_a = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
-    lead_b = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
-    a = c.post('/api/auth/signup', json={"lead_session_id": lead_a, "email": "pa@x.com", "phone": "1", "password": "pw123456", "healthcare_consent": True}).get_json()
-    b = c.post('/api/auth/signup', json={"lead_session_id": lead_b, "email": "pb@x.com", "phone": "2", "password": "pw123456", "healthcare_consent": True}).get_json()
+
+    lead_a = c.post(
+        '/api/lead/start',
+        json={"source_channel": "website_widget"}
+    ).get_json()["lead_session_id"]
+
+    lead_b = c.post(
+        '/api/lead/start',
+        json={"source_channel": "website_widget"}
+    ).get_json()["lead_session_id"]
+
+    a = _signup_verified(fresh_db, c, lead_a, "pa@x.com", "1")
+    b = _signup_verified(fresh_db, c, lead_b, "pb@x.com", "2")
 
     # Patient A cannot fetch Patient B's profile
-    r = c.get(f'/api/patient/{b["patient_session_id"]}/profile', headers={"Authorization": "Bearer " + a["token"]})
+    r = c.get(
+        f'/api/patient/{b["patient_session_id"]}/profile',
+        headers={"Authorization": "Bearer " + a["token"]}
+    )
     assert r.status_code == 403
 
     # Patient cannot reach clinician queue

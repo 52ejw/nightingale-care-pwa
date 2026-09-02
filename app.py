@@ -171,8 +171,12 @@ A like alone does not create a LeadSession because it shows no expressed interes
 def social_comment_webhook():
     body = request.get_json(force=True)
     platform = body["platform"]  # instagram_comment | tiktok_comment | facebook_comment
-    resp = lead_start_internal(channel=platform, identity_level="anonymous",
-                                context=body.get("post_topic", "your comment"))
+    resp = lead_start_internal(
+        channel=platform,
+        identity_level="anonymous",
+        context=body.get("post_topic", "your comment"),
+        handle=body.get("handle"),
+    )
     return jsonify({"dm_sent": True, "portal_link": f"/?lead={resp['lead_session_id']}",
                      "opening": resp["greeting"]})
 
@@ -329,39 +333,125 @@ def signup():
     if not patient:
         patient_id = new_id()  # immutable internal PK; email/phone can change later without breaking this
         DB.execute(
-            "INSERT INTO patients (id, email, phone, password_hash, marketing_consent, marketing_consent_ts, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO patients (id, email, phone, password_hash, email_verified, phone_verified, "
+            "verification_code, marketing_consent, marketing_consent_ts, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (patient_id, email, phone, generate_password_hash(body["password"]),
-             int(body.get("marketing_consent", False)),
-             now_iso() if body.get("marketing_consent") else None, now_iso())
+            0, 0, secrets.token_hex(3).upper(),
+            int(body.get("marketing_consent", False)),
+            now_iso() if body.get("marketing_consent") else None,
+            now_iso())
         )
     else:
         patient_id = patient["id"]
     DB.commit()
 
+    verification = DB.execute(
+        "SELECT verification_code FROM patients WHERE id=?",
+        (patient_id,)
+    ).fetchone()
+
+    return jsonify({
+        "verification_required": True,
+        "email": email,
+        "lead_session_id": lead_id,
+        "verification_code": verification["verification_code"],
+    })
+
+@app.post("/api/auth/verify")
+def verify_patient():
+    body = request.get_json(force=True)
+    email = body.get("email")
+    code = body.get("code")
+    lead_id = body.get("lead_session_id")
+
+    patient = DB.execute(
+        "SELECT * FROM patients WHERE email=? AND verification_code=?",
+        (email, code)
+    ).fetchone()
+
+    if not patient:
+        return jsonify({"error": "Invalid verification code."}), 400
+
+    if not lead_id:
+        return jsonify({"error": "lead_session_id is required."}), 400
+
+    lead = DB.execute(
+        "SELECT * FROM lead_sessions WHERE id=?",
+        (lead_id,)
+    ).fetchone()
+
+    if not lead:
+        return jsonify({"error": "lead not found"}), 404
+
+    # Mark contact details as verified.
+    DB.execute(
+        "UPDATE patients SET email_verified=1, phone_verified=1, verification_code=NULL WHERE id=?",
+        (patient["id"],)
+    )
+
+    # Create the authenticated patient session.
     ps_id = new_id()
     DB.execute(
-        "INSERT INTO patient_sessions (id, patient_id, lead_session_id, consent_share_ts, created_at) VALUES (?,?,?,?,?)",
-        (ps_id, patient_id, lead_id, now_iso(), now_iso())
+        "INSERT INTO patient_sessions "
+        "(id, patient_id, lead_session_id, consent_share_ts, created_at) "
+        "VALUES (?,?,?,?,?)",
+        (
+            ps_id,
+            patient["id"],
+            lead_id,
+            now_iso(),
+            now_iso(),
+        )
     )
-    DB.execute("UPDATE lead_sessions SET status='converted' WHERE id=?", (lead_id,))
-    DB.commit()
 
-    # Moves approved guest facts into the patient session while keeping the original guest message as their source.
+    # Convert the lead.
+    DB.execute(
+        "UPDATE lead_sessions SET status='converted' WHERE id=?",
+        (lead_id,)
+    )
+
+    # Migrate permitted guest context into the authenticated profile.
     guest_msgs = DB.execute(
-        "SELECT * FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at", (lead_id,)
+        "SELECT * FROM guest_messages "
+        "WHERE lead_session_id=? AND sender='guest' "
+        "ORDER BY created_at",
+        (lead_id,)
     ).fetchall()
+
     for gm in guest_msgs:
-        facts = extract_facts(gm["id"], gm["content_redacted"])  # provenance_pointer stays the GuestMessage id
+        facts = extract_facts(gm["id"], gm["content_redacted"])
         merge_into_profile(DB, ps_id, facts)
 
+    DB.commit()
+
+    # Create authenticated session token.
     token = secrets.token_urlsafe(24)
-    SESSIONS[token] = {"type": "patient", "id": patient_id, "role": "patient", "patient_session_id": ps_id}
-    emit_event(lead_id=lead_id, patient_session_id=ps_id, event_type="auth_started")
-    emit_event(lead_id=lead_id, patient_session_id=ps_id, event_type="consented")
-    emit_event(lead_id=lead_id, patient_session_id=ps_id, event_type="patient_created")
-    audit(patient_id, "patient_created_from_lead", lead_id)
-    return jsonify({"token": token, "patient_session_id": ps_id, "patient_id": patient_id})
+    SESSIONS[token] = {
+        "type": "patient",
+        "id": patient["id"],
+        "role": "patient",
+        "patient_session_id": ps_id,
+    }
+
+    emit_event(
+        lead_id=lead_id,
+        patient_session_id=ps_id,
+        event_type="patient_created",
+    )
+
+    audit(
+        patient["id"],
+        "patient_created_from_lead",
+        lead_id,
+    )
+
+    return jsonify({
+        "verified": True,
+        "token": token,
+        "patient_session_id": ps_id,
+        "patient_id": patient["id"],
+    })
 
 @app.post("/api/auth/login")
 def login():

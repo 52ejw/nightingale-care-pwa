@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS value_events (
 );
 CREATE TABLE IF NOT EXISTS patients (
     id TEXT PRIMARY KEY, email TEXT UNIQUE, phone TEXT, password_hash TEXT,
+    email_verified INTEGER DEFAULT 0, phone_verified INTEGER DEFAULT 0,
+    verification_code TEXT,
     marketing_consent INTEGER DEFAULT 0, marketing_consent_ts TEXT, created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS patient_sessions (
@@ -64,6 +66,25 @@ def get_db(path=None):
 
 def init_db(path=None):
     conn = get_db(path)
+
     conn.executescript(SCHEMA)
+
+    # Migrate existing databases to the current patients schema
+    try:
+        conn.execute("ALTER TABLE patients ADD COLUMN email_verified INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        conn.execute("ALTER TABLE patients ADD COLUMN phone_verified INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        conn.execute("ALTER TABLE patients ADD COLUMN verification_code TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
+
     return conn
