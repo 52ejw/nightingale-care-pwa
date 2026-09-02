@@ -226,49 +226,155 @@ def get_lead(lead_id):
     })
 @app.post("/api/lead/<lead_id>/message")
 def guest_message(lead_id):
-    lead = DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
+    lead = DB.execute(
+        "SELECT * FROM lead_sessions WHERE id=?",
+        (lead_id,)
+    ).fetchone()
+
     if not lead:
         return jsonify({"error": "not found"}), 404
+
     if rate_limited(lead_id):
-        return jsonify({"error": "rate_limited", "message": "Too many messages — please slow down a moment."}), 429
+        return jsonify({
+            "error": "rate_limited",
+            "message": "Too many messages — please slow down a moment."
+        }), 429
 
     raw = request.get_json(force=True)["message"]
     redacted, phi_found = redact(raw)
     risk = assess_risk(redacted)
-    enc = encrypt(raw) if phi_found else None  # PHI hidden from staff until consent
+
+    # Create the guest message ID FIRST so the escalation
+    # points to the actual message that triggered the risk.
+    msg_id = new_id()
+
+    enc = encrypt(raw) if phi_found else None
 
     DB.execute(
-        "INSERT INTO guest_messages (id, lead_session_id, sender, content_redacted, phi_detected, encrypted_raw, created_at) "
+        "INSERT INTO guest_messages "
+        "(id, lead_session_id, sender, content_redacted, phi_detected, encrypted_raw, created_at) "
         "VALUES (?,?,?,?,?,?,?)",
-        (new_id(), lead_id, "guest", redacted, int(phi_found), enc, now_iso())
+        (
+            msg_id,
+            lead_id,
+            "guest",
+            redacted,
+            int(phi_found),
+            enc,
+            now_iso()
+        )
     )
+
     DB.commit()
-    audit(None, "guest_message_received", lead_id, {"phi_detected": phi_found})
+
+    audit(
+        None,
+        "guest_message_received",
+        lead_id,
+        {"phi_detected": phi_found}
+    )
 
     if risk["risk_level"] in ("high", "medium"):
         reply = (
             "I want to make sure the right person sees this rather than me guessing. "
             "Because you've mentioned something that may need clinical attention, "
             "I'm not going to give you a generic answer. "
-            "I can help send this to the clinic so a nurse or clinician can review it."
+            "I've flagged this for the clinic so a nurse or clinician can review it."
         )
         event_type = "clinical_escalation"
+
+        # Persist the high/medium-risk guest message as a
+        # compassion-priority escalation.
+        triage_summary = {
+            "risk_level": risk["risk_level"],
+            "risk_reason": risk["risk_reason"],
+            "confidence": risk["confidence"],
+            "risk_provenance": risk["risk_provenance"],
+            "triggering_message_id": msg_id,
+        }
+
+        attribution_snapshot = dict(lead)
+
+        escalation_id = new_id()
+
+        DB.execute(
+            "INSERT INTO escalations "
+            "(id, patient_session_id, triggering_message_id, triage_summary, "
+            "profile_snapshot, attribution_snapshot, status, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                escalation_id,
+                None,
+                msg_id,
+                json.dumps(triage_summary),
+                json.dumps([]),
+                json.dumps(attribution_snapshot),
+                "pending",
+                now_iso()
+            )
+        )
+
+        DB.commit()
+
+        emit_event(
+            lead_id=lead_id,
+            event_type="escalation_sent",
+            meta={
+                "escalation_id": escalation_id,
+                "risk_level": risk["risk_level"]
+            }
+        )
+
+        audit(
+            None,
+            "guest_escalation_created",
+            escalation_id,
+            {"risk_level": risk["risk_level"]}
+        )
+
     else:
         reply, event_type = guest_reply(lead_id, redacted)
 
-    msg_id = new_id()
+    # Store the assistant response.
     DB.execute(
-        "INSERT INTO guest_messages (id, lead_session_id, sender, content_redacted, created_at) VALUES (?,?,?,?,?)",
-        (msg_id, lead_id, "assistant", reply, now_iso())
+        "INSERT INTO guest_messages "
+        "(id, lead_session_id, sender, content_redacted, created_at) "
+        "VALUES (?,?,?,?,?)",
+        (
+            new_id(),
+            lead_id,
+            "assistant",
+            reply,
+            now_iso()
+        )
     )
-    DB.execute(
-        "INSERT INTO value_events (id, lead_session_id, event_type, content, created_at) VALUES (?,?,?,?,?)",
-        (new_id(), lead_id, event_type, reply, now_iso())
-    )
-    DB.commit()
-    emit_event(lead_id=lead_id, event_type="value_event", meta={"kind": event_type})
-    return jsonify({"reply": reply, "value_event": event_type, "trust_prompt_available": True})
 
+    DB.execute(
+        "INSERT INTO value_events "
+        "(id, lead_session_id, event_type, content, created_at) "
+        "VALUES (?,?,?,?,?)",
+        (
+            new_id(),
+            lead_id,
+            event_type,
+            reply,
+            now_iso()
+        )
+    )
+
+    DB.commit()
+
+    emit_event(
+        lead_id=lead_id,
+        event_type="value_event",
+        meta={"kind": event_type}
+    )
+
+    return jsonify({
+        "reply": reply,
+        "value_event": event_type,
+        "trust_prompt_available": True
+    })
 """
 Creates a short, personalised note based on what the user actually said.
 Limited to 240 characters as required by the brief.

@@ -592,18 +592,13 @@
             "them",
           );
 
-          // SHOW ESCALATION ACTION FOR HIGH-RISK MESSAGE
+          // SHOW ESCALATION STATUS FOR HIGH-RISK MESSAGE
           if (isHighRisk) {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "escalate-btn";
-            btn.textContent = "Send to Nurse/Clinic";
-
-            btn.onclick = function () {
-              // There is no patient session yet, so securely continue through signup.
-              maybeOfferSignup();
-              btn.remove();
-            };
+            btn.textContent = "Sent to Nurse/Clinic";
+            btn.disabled = true;
 
             document.getElementById("thread").appendChild(btn);
           }
