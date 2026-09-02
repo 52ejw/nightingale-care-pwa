@@ -478,6 +478,17 @@
       }
 
       (async function start() {
+        const savedPatientToken = localStorage.getItem(
+          "nightingale_patient_token",
+        );
+        const savedPatientSessionId = localStorage.getItem(
+          "nightingale_patient_session_id",
+        );
+
+        if (savedPatientToken && savedPatientSessionId) {
+          patientToken = savedPatientToken;
+          patientSessionId = savedPatientSessionId;
+        }
         const params = new URLSearchParams(window.location.search);
         const referralToken = params.get("ref");
         const existingLeadId = params.get("lead");
@@ -578,6 +589,19 @@
             body: JSON.stringify({ message: text }),
           });
           const d = await r.json();
+          if (r.status === 401) {
+            localStorage.removeItem("nightingale_patient_token");
+            localStorage.removeItem("nightingale_patient_session_id");
+            patientToken = null;
+            patientSessionId = null;
+
+            addBubble(
+              "Your session has expired. Please log in again to continue securely.",
+              "them",
+            );
+            maybeOfferSignup();
+            return;
+          }
           addBubble(
             d.reply,
             "them",
@@ -614,8 +638,53 @@
             <input id="su_healthcare_consent" type="checkbox">
             I consent to share the healthcare information I provide with the clinic so they can respond to my enquiry.
           </label>
+          <button type="button" onclick="patientLogin()" style="margin-top:8px; background:#fff; color:var(--sage); border:1px solid var(--sage);">
+            Already have an account? Log in
+          </button>
           <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
         t.appendChild(card);
+      }
+      async function patientLogin() {
+        const email = prompt("Enter your account email:");
+        if (!email) return;
+
+        const password = prompt("Enter your password:");
+        if (!password) return;
+
+        const r = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const d = await r.json();
+
+        if (!r.ok || !d.token || d.role !== "patient") {
+          addBubble(
+            d.error ||
+              "Unable to log in. Please check your email and password.",
+            "them",
+          );
+          return;
+        }
+
+        patientToken = d.token;
+        patientSessionId = d.patient_session_id;
+
+        localStorage.setItem("nightingale_patient_token", patientToken);
+        localStorage.setItem(
+          "nightingale_patient_session_id",
+          patientSessionId,
+        );
+
+        document.getElementById("profileToggle").style.display = "block";
+
+        addBubble(
+          "You're verified — your profile is ready. Let's continue from where you left off.",
+          "them",
+        );
+
+        loadProfile();
       }
       async function doSignup() {
         const body = {
@@ -641,8 +710,14 @@
           return;
         }
         const d = await r.json();
+        console.log("SIGNUP RESPONSE:", d);
         patientToken = d.token;
+        localStorage.setItem("nightingale_patient_token", patientToken);
         patientSessionId = d.patient_session_id;
+        localStorage.setItem(
+          "nightingale_patient_session_id",
+          patientSessionId,
+        );
         document.getElementById("profileToggle").style.display = "block";
         addBubble(
           "You're verified — everything you told me is already in your profile. Let's continue.",
@@ -714,7 +789,12 @@
           (d.compassion_priority_queue
             .map(
               (c) => `<div class="leadrow compassion-row">
-                <span>${c.summary.join("; ")}</span>
+                <span>${
+                  Array.isArray(c.summary)
+                    ? c.summary.join("; ")
+                    : c.summary?.risk_reason ||
+                      "Clinical concern requires review"
+                }</span>
                 <button onclick="respondToEscalation('${c.escalation_id}', this)">
                   Review / Respond
                 </button>

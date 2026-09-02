@@ -36,7 +36,7 @@ def test_guest_to_patient_conversion(fresh_db):
     lead_id = r.get_json()["lead_session_id"]
     c.post(f'/api/lead/{lead_id}/message', json={"message": "I'm worried about my fertility at 42"})
     r = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "a@x.com",
-                                          "phone": "0123456789", "password": "pw123456"})
+                                          "phone": "0123456789", "password": "pw123456", "healthcare_consent": True})
     ps_id = r.get_json()["patient_session_id"]
     profile = c.get(f'/api/patient/{ps_id}/profile',
                      headers={"Authorization": "Bearer " + r.get_json()["token"]}).get_json()
@@ -60,7 +60,7 @@ def test_escalation_payload(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "google_ad_click"}).get_json()["lead_session_id"]
     r = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "b@x.com",
-                                          "phone": "0123456789", "password": "pw123456"}).get_json()
+                                          "phone": "0123456789", "password": "pw123456","healthcare_consent": True}).get_json()
     hdr = {"Authorization": "Bearer " + r["token"]}
     ps_id = r["patient_session_id"]
     m = c.post(f'/api/patient/{ps_id}/message', json={"message": "I have crushing chest pain"}, headers=hdr).get_json()
@@ -75,7 +75,7 @@ def test_risk_escalation(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
     sr = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "c@x.com",
-                                           "phone": "012", "password": "pw123456"}).get_json()
+                                           "phone": "012", "password": "pw123456","healthcare_consent": True}).get_json()
     hdr = {"Authorization": "Bearer " + sr["token"]}
     m = c.post(f'/api/patient/{sr["patient_session_id"]}/message',
                json={"message": "I have crushing chest pain."}, headers=hdr).get_json()
@@ -91,7 +91,7 @@ def test_memory_mutation(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
     sr = c.post('/api/auth/signup', json={"lead_session_id": lead_id, "email": "d@x.com",
-                                           "phone": "012", "password": "pw123456"}).get_json()
+                                           "phone": "012", "password": "pw123456","healthcare_consent": True}).get_json()
     hdr = {"Authorization": "Bearer " + sr["token"]}
     ps_id = sr["patient_session_id"]
     c.post(f'/api/patient/{ps_id}/message', json={"message": "I take Advil."}, headers=hdr)
@@ -118,8 +118,8 @@ def test_access_control(fresh_db):
     _seed_staff(fresh_db, "nurse1", "nurse")
     lead_a = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
     lead_b = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
-    a = c.post('/api/auth/signup', json={"lead_session_id": lead_a, "email": "pa@x.com", "phone": "1", "password": "pw123456"}).get_json()
-    b = c.post('/api/auth/signup', json={"lead_session_id": lead_b, "email": "pb@x.com", "phone": "2", "password": "pw123456"}).get_json()
+    a = c.post('/api/auth/signup', json={"lead_session_id": lead_a, "email": "pa@x.com", "phone": "1", "password": "pw123456", "healthcare_consent": True}).get_json()
+    b = c.post('/api/auth/signup', json={"lead_session_id": lead_b, "email": "pb@x.com", "phone": "2", "password": "pw123456", "healthcare_consent": True}).get_json()
 
     # Patient A cannot fetch Patient B's profile
     r = c.get(f'/api/patient/{b["patient_session_id"]}/profile', headers={"Authorization": "Bearer " + a["token"]})

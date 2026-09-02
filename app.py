@@ -22,9 +22,36 @@ from memory import extract_facts, merge_into_profile
 # App configuration, database, authentication sessions, guest rate limits, and session expiry.
 app = Flask(__name__, static_folder="static", static_url_path="")
 DB = init_db()
+
+GUEST_TTL_DAYS = 30  
+
+def purge_expired_guest_data():
+    cutoff = datetime.now() - timedelta(days=GUEST_TTL_DAYS)
+    cutoff_iso = cutoff.isoformat()
+
+    DB.execute(
+        "DELETE FROM guest_messages WHERE lead_session_id IN "
+        "(SELECT id FROM lead_sessions WHERE created_at < ? AND status != 'converted')",
+        (cutoff_iso,)
+    )
+
+    DB.execute(
+        "DELETE FROM value_events WHERE lead_session_id IN "
+        "(SELECT id FROM lead_sessions WHERE created_at < ? AND status != 'converted')",
+        (cutoff_iso,)
+    )
+
+    DB.execute(
+        "DELETE FROM lead_sessions WHERE created_at < ? AND status != 'converted'",
+        (cutoff_iso,)
+    )
+
+    DB.commit()
+
+purge_expired_guest_data()
+
 SESSIONS: dict[str, dict] = {}          
-GUEST_RATE_LIMIT: dict[str, list] = {}  
-GUEST_TTL_DAYS = 30                     
+GUEST_RATE_LIMIT: dict[str, list] = {}                     
 
 # small helpers
 
@@ -373,6 +400,53 @@ def patient_reply(ps_id, text_redacted, risk):
     return ("Thanks for sharing that. I'm keeping track of it in your profile. "
             "I can give general info, but for anything specific to you, a clinician should weigh in."), None
 
+def create_escalation(ps_id, triggering_message_id, risk):
+    profile_rows = DB.execute(
+        "SELECT * FROM memory_items WHERE patient_session_id=?",
+        (ps_id,)
+    ).fetchall()
+
+    profile_snapshot = [dict(row) for row in profile_rows]
+
+    session = DB.execute(
+        "SELECT * FROM patient_sessions WHERE id=?",
+        (ps_id,)
+    ).fetchone()
+
+    lead = None
+    if session and session["lead_session_id"]:
+        lead = DB.execute(
+            "SELECT * FROM lead_sessions WHERE id=?",
+            (session["lead_session_id"],)
+        ).fetchone()
+
+    attribution_snapshot = dict(lead) if lead else {}
+
+    triage_summary = {
+        "risk_level": risk["risk_level"],
+        "risk_reason": risk["risk_reason"],
+        "confidence": risk["confidence"],
+        "triggering_message_id": triggering_message_id,
+    }
+
+    DB.execute(
+        "INSERT INTO escalations "
+        "(id, patient_session_id, triggering_message_id, triage_summary, "
+        "profile_snapshot, attribution_snapshot, status, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (
+            new_id(),
+            ps_id,
+            triggering_message_id,
+            json.dumps(triage_summary),
+            json.dumps(profile_snapshot),
+            json.dumps(attribution_snapshot),
+            "pending",
+            now_iso(),
+        )
+    )
+    DB.commit()
+
 @app.post("/api/patient/<ps_id>/message")
 @require_role("patient")
 def patient_message(ps_id):
@@ -397,6 +471,12 @@ def patient_message(ps_id):
     merge_into_profile(DB, ps_id, facts)
 
     reply_text, citation = patient_reply(ps_id, redacted, risk)
+    if risk["risk_level"] in ("high", "medium"):
+        create_escalation(
+            ps_id=ps_id,
+            triggering_message_id=msg_id,
+            risk=risk
+        )
     DB.execute(
         "INSERT INTO messages (id, patient_session_id, sender, content_redacted, created_at) VALUES (?,?,?,?,?)",
         (new_id(), ps_id, "assistant", reply_text, now_iso())
@@ -463,7 +543,11 @@ def escalate(ps_id):
          json.dumps(attribution), "pending", now_iso())
     )
     DB.commit()
-    emit_event(patient_session_id=ps_id, event_type="escalation_sent")
+    emit_event(
+    lead_id=ps["lead_session_id"],
+    patient_session_id=ps_id,
+    event_type="escalation_sent",
+    )
     audit(g.session["id"], "escalation_created", esc_id)
     return jsonify({"escalation_id": esc_id, "triage_summary": summary,
                      "expected_response": "12-18 hours", "status": "pending"})
@@ -526,6 +610,13 @@ def get_escalation(esc_id):
     row = DB.execute("SELECT * FROM escalations WHERE id=?", (esc_id,)).fetchone()
     if not row:
         return jsonify({"error": "not found"}), 404
+    patient_session = DB.execute(
+        "SELECT patient_id FROM patient_sessions WHERE id=?",
+        (row["patient_session_id"],)
+    ).fetchone()
+
+    if not patient_session:
+        return jsonify({"error": "not found"}), 404
     d = dict(row)
     d["triage_summary"] = json.loads(d["triage_summary"])
     d["profile_snapshot"] = json.loads(d["profile_snapshot"])
@@ -536,10 +627,23 @@ def get_escalation(esc_id):
 @require_role("clinician", "nurse")
 def respond_escalation(esc_id):
     body = request.get_json(force=True)
-    DB.execute("UPDATE escalations SET status='responded', clinician_response=? WHERE id=?",
-               (body["response"], esc_id))
+
+    row = DB.execute(
+        "SELECT id FROM escalations WHERE id=?",
+        (esc_id,)
+    ).fetchone()
+
+    if not row:
+        return jsonify({"error": "escalation not found"}), 404
+
+    DB.execute(
+        "UPDATE escalations SET status='responded', clinician_response=? WHERE id=?",
+        (body["response"], esc_id)
+    )
     DB.commit()
+
     audit(g.session["id"], "escalation_responded", esc_id)
+
     return jsonify({"status": "responded"})
 
 # seed one of each staff role for the demo
