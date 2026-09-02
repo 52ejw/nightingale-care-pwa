@@ -826,7 +826,9 @@
           '<p class="section-note">These cases are surfaced separately and are never sales-ranked.</p>' +
           (d.compassion_priority_queue
             .map(
-              (c) => `<div class="leadrow compassion-row">
+              (
+                c,
+              ) => `<div class="leadrow compassion-row" id="row_${c.escalation_id}">
                 <span>${
                   Array.isArray(c.summary)
                     ? c.summary.join("; ")
@@ -834,8 +836,6 @@
                       "Clinical concern requires review"
                 }</span>
                 <button onclick="viewEscalation('${c.escalation_id}')">View case</button>
-                  Review / Respond
-                </button>
               </div>`,
             )
             .join("") || '<p class="empty-state">None pending</p>') +
@@ -858,6 +858,11 @@
           "</section>";
       }
       async function viewEscalation(escId) {
+        const existing = document.getElementById(`detail_${escId}`);
+        if (existing) {
+          existing.remove();
+          return;
+        }
         const r = await fetch(`/api/staff/escalation/${escId}`, {
           headers: { Authorization: "Bearer " + staffToken },
         });
@@ -869,15 +874,18 @@
 
         const t = d.triage_summary;
         const panel = document.createElement("div");
+        panel.id = `detail_${escId}`;
         panel.className = "case-detail";
         panel.innerHTML = `
-    <p><b>Risk:</b> ${t.risk_level} (${t.confidence} confidence) — ${t.risk_reason}</p>
-    <p><b>Message:</b> ${d.triggering_message ? d.triggering_message.content_redacted : "(not found)"}</p>
-    <p><b>Source:</b> ${d.attribution_snapshot.source_channel || "unknown"} ${d.attribution_snapshot.campaign_id ? "/ " + d.attribution_snapshot.campaign_id : ""}</p>
-    <textarea id="resp_${escId}" placeholder="Clinician response"></textarea>
-    <button onclick="submitResponse('${escId}')">Submit response</button>
-  `;
-        document.getElementById("compassionBox").appendChild(panel);
+          <p><b>Risk:</b> ${t.risk_level} (${t.confidence} confidence) — ${t.risk_reason}</p>
+          <p><b>Message:</b> ${d.triggering_message ? d.triggering_message.content_redacted : "(not found)"}</p>
+          <p><b>Source:</b> ${d.attribution_snapshot.source_channel || "unknown"} ${d.attribution_snapshot.campaign_id ? "/ " + d.attribution_snapshot.campaign_id : ""}</p>
+          <textarea id="resp_${escId}" placeholder="Clinician response"></textarea>
+          <button onclick="submitResponse('${escId}')">Submit response</button>
+        `;
+        document
+          .getElementById(`row_${escId}`)
+          .insertAdjacentElement("afterend", panel);
       }
 
       async function submitResponse(escId) {
