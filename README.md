@@ -133,3 +133,30 @@ Guest-only data is retained for up to 30 days for abandonment analytics. Guest P
 - Redaction failures currently fail closed by returning an error rather than forwarding unredacted data.
 - Without an Anthropic API key, the application uses safe canned responses.
 - The application is a development/demo system and uses synthetic data only.
+
+## Staff Referral
+
+To generate a staff referral link for the demo, first start the application with:
+
+```bash
+python app.py
+```
+
+Then run the following commands in a separate terminal:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"name":"dr_lim","password":"demo1234"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+LINK=$(curl -s -X POST http://127.0.0.1:5000/api/staff/referral \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"topic":"asked about egg freezing at today'\''s visit"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['link'])")
+
+echo "http://127.0.0.1:5000$LINK"
+```
+
+The final command prints the referral URL. Open this URL in a browser to start the patient referral flow.
+
+The demo uses the `dr_lim` clinician account listed in the **Demo Staff Accounts** section.

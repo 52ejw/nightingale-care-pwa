@@ -24,6 +24,7 @@ from redaction import redact, encrypt, decrypt
 from risk_gating import assess_risk
 from memory import extract_facts, merge_into_profile
 
+# Optional LLM client for low-risk conversational responses
 try:
     from anthropic import Anthropic
     _ANTHROPIC_CLIENT = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"]) if os.environ.get("ANTHROPIC_API_KEY") else None
@@ -52,12 +53,13 @@ def call_llm(system_prompt: str, user_text: str, max_tokens: int = 300):
     except Exception:
         return None
 
-# App configuration, database, authentication sessions, guest rate limits, and session expiry.
+# Configures the Flask app, database, guest retention, and session storage
 app = Flask(__name__, static_folder="static", static_url_path="")
 DB = init_db()
 
 GUEST_TTL_DAYS = 30  
 
+# Removes expired guest data after the 30-day retention period
 def purge_expired_guest_data():
     cutoff = datetime.now() - timedelta(days=GUEST_TTL_DAYS)
     cutoff_iso = cutoff.isoformat()
@@ -83,11 +85,12 @@ def purge_expired_guest_data():
 
 purge_expired_guest_data()
 
-SESSIONS: dict[str, dict] = {}          
+# Stores active authentication sessions in memory
+SESSIONS: dict[str, dict] = {}     
+# Tracks guest messages for basic rate limiting     
 GUEST_RATE_LIMIT: dict[str, list] = {}                     
 
-# small helpers
-
+# Common helpers for timestamps, IDs, audit logs, and events
 def now_iso(): return datetime.now(timezone.utc).isoformat()
 
 def new_id(): return str(uuid.uuid4())
@@ -110,6 +113,7 @@ def emit_event(lead_id=None, patient_session_id=None, event_type="", meta=None):
     )
     DB.commit()
 
+# Restricts an endpoint to users with an allowed role
 def require_role(*roles):
     def deco(f):
         @wraps(f)
@@ -124,6 +128,7 @@ def require_role(*roles):
         return wrapper
     return deco
 
+# Limits how many guest messages can be sent within one minute
 def rate_limited(lead_id, max_per_min=10):
     now = datetime.now(timezone.utc)
     hits = [t for t in GUEST_RATE_LIMIT.get(lead_id, []) if now - t < timedelta(minutes=1)]
@@ -132,13 +137,11 @@ def rate_limited(lead_id, max_per_min=10):
     return len(hits) > max_per_min
 
 # static frontend
-
 @app.get("/")
 def index():
     return send_from_directory("static", "index.html")
 
-# channels and attribution
-
+# Starts guest sessions and records their acquisition channel and attribution
 @app.post("/api/lead/start")
 def lead_start():
     purge_expired_guest_data()
@@ -163,6 +166,7 @@ def lead_start():
 
 @app.post("/api/staff/referral")
 @require_role("staff", "clinician", "nurse")
+# Creates a referral link that staff can send to a patient
 def staff_referral():
     body = request.get_json(force=True)
     token = secrets.token_urlsafe(8)
@@ -175,6 +179,7 @@ def staff_referral():
     return jsonify({"link": f"/?ref={token}"})
 
 @app.get("/api/lead/from-referral/<token>")
+# Converts a staff referral token into a new guest session
 def lead_from_referral(token):
     row = DB.execute("SELECT * FROM staff_referrals WHERE token=?", (token,)).fetchone()
     if not row:
@@ -214,8 +219,7 @@ def social_comment_webhook():
     return jsonify({"dm_sent": True, "portal_link": f"/?lead={resp['lead_session_id']}",
                      "opening": resp["greeting"]})
 
-# Guest value and scope boundary
-
+# Provides safe guest education and controls when conversational AI can respond
 VALUE_KB = {
     "egg freezing": "Egg freezing (oocyte cryopreservation) involves ovarian stimulation, egg retrieval, then vitrification — most clinics quote a 2-3 week process per cycle.",
     "ivf": "IVF success rates vary strongly by age and clinic — ask for the clinic's own live-birth-per-cycle rate by age band, not just the national average.",
@@ -230,6 +234,7 @@ GUEST_SYSTEM_PROMPT = (
     "sound concerning. Be warm and brief (2-4 sentences). Do not ask for contact info."
 )
 
+# Generates a safe guest response using the LLM or a canned fallback
 def guest_reply(lead_id, text_redacted):
     low = text_redacted.lower()
     if "real doctor" in low or "are you a bot" in low or "are you human" in low:
@@ -291,8 +296,7 @@ def guest_message(lead_id):
     redacted, phi_found = redact(raw)
     risk = assess_risk(redacted)
 
-    # Create the guest message ID FIRST so the escalation
-    # points to the actual message that triggered the risk.
+    # Create the message ID first so any escalation points to the exact triggering message 
     msg_id = new_id()
 
     enc = encrypt(raw) if phi_found else None
@@ -329,8 +333,7 @@ def guest_message(lead_id):
         )
         event_type = "clinical_escalation"
 
-        # Persist the high/medium-risk guest message as a
-        # compassion-priority escalation.
+        # Sends high- and medium-risk guest messages to the clinical priority queue
         triage_summary = {
             "risk_level": risk["risk_level"],
             "risk_reason": risk["risk_reason"],
@@ -429,6 +432,7 @@ Creates a short, personalised note based on what the user actually said.
 Limited to 240 characters as required by the brief.
 """
 @app.get("/api/lead/<lead_id>/personal-note")
+# Creates a personalised value message from the guest's latest input
 def personal_note(lead_id):
     rows = DB.execute(
         "SELECT content_redacted FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at DESC LIMIT 1",
@@ -484,7 +488,7 @@ def summary_email(lead_id):
     emit_event(lead_id=lead_id, event_type="value_event", meta={"kind": "summary_email"})
     audit(None, "summary_email_sent", lead_id, {"transactional": True})
 
-    # Simulated send — swap for a transactional email provider call in production.
+    # Simulates the transactional email for the demo
     return jsonify({
         "sent_to": email, "summary": summary, "questions": questions,
         "transactional": True,
@@ -511,7 +515,7 @@ def clinic_stat(lead_id):
     stat = f"{count} people asked this clinic a question this week."
     return jsonify({"stat": stat, "raw_count": count})
 
-# Conversion and Identity 
+# Converts a verified guest session into an authenticated patient session
 
 """
 Authentication happens when the user shows interest or receives value.
@@ -678,7 +682,7 @@ def login():
         return jsonify({"token": token, "role": "patient", "patient_session_id": ps["id"] if ps else None})
     return jsonify({"error": "invalid credentials"}), 401
 
-# Patient chat, risk gating, memory, escalation
+# Handles authenticated patient messages, memory updates, risk gating, and escalation
 
 EDU_CITATIONS = {
     "period": ("Irregular cycles are common and usually not urgent on their own.", "ACOG patient FAQ, cycle irregularity"),
@@ -772,7 +776,7 @@ def patient_message(ps_id):
         return jsonify({"error": "forbidden"}), 403
 
     raw = request.get_json(force=True)["message"]
-    redacted, _ = redact(raw)  # redacted text that goes to the LLM
+    redacted, _ = redact(raw)  # Redacted text used for risk assessment and response generation
     risk = assess_risk(redacted)
 
     msg_id = new_id()
@@ -810,6 +814,7 @@ def patient_message(ps_id):
 
 @app.get("/api/patient/<ps_id>/profile")
 @require_role("patient", "staff", "clinician", "nurse")
+# Returns the patient's saved profile information
 def get_profile(ps_id):
     if g.session["role"] == "patient" and g.session.get("patient_session_id") != ps_id:
         return jsonify({"error": "forbidden"}), 403
@@ -824,7 +829,7 @@ def escalate(ps_id):
     body = request.get_json(force=True)
     trigger_id = body["triggering_message_id"]
 
-    # Handle duplicate requests for the same patient session and triggering message
+    # Prevents the same message from being escalated more than once
     existing = DB.execute(
         "SELECT id, triage_summary, status FROM escalations "
         "WHERE patient_session_id=? AND triggering_message_id=? "
@@ -869,7 +874,7 @@ def escalate(ps_id):
     return jsonify({"escalation_id": esc_id, "triage_summary": summary,
                      "expected_response": "12-18 hours", "status": "pending"})
 
-# Staff/Clinician dashboard
+# Staff dashboard for clinical escalations and lead follow-up
 
 """
 Ranks leads using recency, channel, identity level, and funnel stage.
@@ -901,7 +906,7 @@ def warm_leads():
             "contactable": bool(lead["email"] or lead["handle"]),
         })
 
-    # compassion queue is separate and always shown first, never scored for sales
+    # Keeps clinical concerns separate from sales-ranked leads
     escalations = DB.execute("SELECT * FROM escalations WHERE status='pending' ORDER BY created_at").fetchall()
     compassion = [{"escalation_id": e["id"], "summary": json.loads(e["triage_summary"]),
                    "created_at": e["created_at"]} for e in escalations]
@@ -945,6 +950,7 @@ def get_escalation(esc_id):
 
 @app.get("/api/staff/guest-message/<msg_id>/reveal")
 @require_role("clinician", "nurse")
+# Allows authorised clinical staff to reveal encrypted guest PHI after consent
 def reveal_guest_phi(msg_id):
     row = DB.execute(
         "SELECT gm.*, ls.status AS lead_status FROM guest_messages gm "
@@ -963,6 +969,7 @@ def reveal_guest_phi(msg_id):
 
 @app.post("/api/staff/escalation/<esc_id>/respond")
 @require_role("clinician", "nurse")
+# Records the clinician's response and closes the pending escalation
 def respond_escalation(esc_id):
     body = request.get_json(force=True)
 
@@ -984,7 +991,7 @@ def respond_escalation(esc_id):
 
     return jsonify({"status": "responded"})
 
-# seed one of each staff role for the demo
+# Creates one demo account for each staff role when the app starts
 if __name__ == "__main__":
     for name, role in [("nurse_amy", "nurse"), ("dr_lim", "clinician"), ("frontdesk_wan", "staff")]:
         if not DB.execute("SELECT 1 FROM staff_users WHERE name=?", (name,)).fetchone():

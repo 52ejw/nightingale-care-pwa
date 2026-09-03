@@ -5,14 +5,16 @@ Falls back from an exact match to a channel or global default.
 """
 from datetime import datetime
 
+# Buckets the current time into morning/afternoon/evening for rule matching
 def daypart(ts: datetime = None) -> str:
-    ts = ts or datetime.now()
+    ts = ts or datetime.now() # use current time if none is passed in
     h = ts.hour
     if 5 <= h < 12: return "morning"
     if 12 <= h < 18: return "afternoon"
     return "evening"
 
-# key = (channel, identity_level, daypart) ; "*" = wildcard
+# Lookup table: (channel, identity_level, daypart) -> opening message + offered info
+# "*" means "any daypart" (a wildcard/catch-all for that channel+identity combo)
 CHANNEL_RULES = {
     ("staff_referral", "identified", "*"): {
         "greeting": "Hi {name_or_there}, {staff_name} mentioned you were asking about {topic} earlier — happy to pick up from there whenever you're ready.",
@@ -47,6 +49,7 @@ CHANNEL_RULES = {
         "greeting": "Thanks for reaching out after reading our reviews. I'm Nightingale — ask me anything about the clinic or {topic}, no sign-up required.",
         "value_events_offered": ["clinic_stat"],
     },
+    # more specific rule (morning) takes priority over the general website_widget "*" rule below
     ("website_widget", "anonymous", "morning"): {
         "greeting": "Morning! I'm Nightingale. You were looking at our {topic} page — happy to answer questions before your day gets busy.",
         "value_events_offered": ["clinic_stat"],
@@ -57,20 +60,24 @@ CHANNEL_RULES = {
     },
 }
 
+# Used when no channel/identity/daypart combination matches anything above
 DEFAULT_RULE = {
     "greeting": "Hi, I'm Nightingale, the clinic's assistant. Ask me anything — no sign-up needed yet.",
     "value_events_offered": ["clinic_stat"],
 }
 
+# Picks the right greeting rule and fills in the placeholders with real values
 def resolve_opening(channel: str, identity_level: str, topic: str = "your visit",
                      name: str = None, staff_name: str = None, ts: datetime = None) -> dict:
     dp = daypart(ts)
+    # try exact (channel, identity, daypart) match first, then fall back to (channel, identity, "*")
     for key in [(channel, identity_level, dp), (channel, identity_level, "*")]:
         if key in CHANNEL_RULES:
             rule = CHANNEL_RULES[key]
             break
     else:
-        rule = DEFAULT_RULE
+        rule = DEFAULT_RULE # no match found in the loop, use the global default
+    # fill placeholders in the greeting template with actual values (or sensible fallbacks)
     text = rule["greeting"].format(
         name_or_there=name or "there",
         topic=topic,

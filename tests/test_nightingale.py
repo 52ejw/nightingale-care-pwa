@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 os.environ["NIGHTINGALE_DB"] = "test_nightingale.db"
 
+# Creates a fresh database for every test
 @pytest.fixture(autouse=True)
 def fresh_db():
     if os.path.exists("test_nightingale.db"):
@@ -21,15 +22,18 @@ def fresh_db():
     if os.path.exists("test_nightingale.db"):
         os.remove("test_nightingale.db")
 
+# Creates a Flask test client for sending API requests
 def client(appmodule):
     return appmodule.app.test_client()
 
+# Creates a staff account for access-control tests
 def _seed_staff(appmodule, name, role):
     from werkzeug.security import generate_password_hash
     appmodule.DB.execute("INSERT INTO staff_users (id, name, role, password_hash) VALUES (?,?,?,?)",
                           (name, name, role, generate_password_hash("pw")))
     appmodule.DB.commit()
 
+# Creates and verifies a patient account from a guest lead
 def _signup_verified(appmodule, c, lead_id, email, phone):
     r = c.post(
         "/api/auth/signup",
@@ -61,6 +65,7 @@ def _signup_verified(appmodule, c, lead_id, email, phone):
 
     return result
 
+# Verifies that guest data and attribution survive patient conversion
 def test_guest_to_patient_conversion(fresh_db):
     c = client(fresh_db)
     r = c.post('/api/lead/start', json={"source_channel": "instagram_ad_click", "campaign_id": "ivf_over40"})
@@ -79,7 +84,8 @@ def test_guest_to_patient_conversion(fresh_db):
 
     lead = fresh_db.DB.execute("SELECT * FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
     assert lead["campaign_id"] == "ivf_over40" and lead["status"] == "converted"
-    
+
+# Verifies that clinic statistics are only shown when enough data exists    
 def test_value_events(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
@@ -92,6 +98,7 @@ def test_value_events(fresh_db):
     r2 = c.get(f'/api/lead/{lead_id}/clinic-stat').get_json()
     assert str(r2["raw_count"]) in r2["stat"]
 
+# Verifies that an escalation stores the correct triage and attribution data
 def test_escalation_payload(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "google_ad_click"}).get_json()["lead_session_id"]
@@ -103,6 +110,7 @@ def test_escalation_payload(fresh_db):
     esc = fresh_db.DB.execute("SELECT * FROM escalations WHERE id=?", (e["escalation_id"],)).fetchone()
     assert esc and json.loads(esc["triage_summary"]) and json.loads(esc["attribution_snapshot"])["source_channel"] == "google_ad_click"
 
+# Verifies that high-risk messages are detected and escalated without advice
 def test_risk_escalation(fresh_db):
     from risk_gating import assess_risk
     r = assess_risk("I have crushing chest pain.")
@@ -116,12 +124,13 @@ def test_risk_escalation(fresh_db):
     assert m["risk_level"] == "high" and m["escalation_required"] is True
     assert "clinic" in m["reply"].lower() and "chest pain" not in m["reply"].lower()  # no advice given
 
+# Verifies that patient memory is updated when a fact changes
 def test_memory_mutation(fresh_db):
     from memory import extract_facts
     f1 = extract_facts("msg1", "I take Advil.")
     assert f1[0]["fact_type"] == "medication" and f1[0]["status"] == "active"
     f2 = extract_facts("msg2", "Actually I stopped last week.")
-    # second turn alone won't name the drug again in real chat; simulate the mutate call directly
+    # Simulates a follow-up message that changes the medication status.
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
     sr = _signup_verified(fresh_db, c, lead_id, "d@x.com", "012")
@@ -134,6 +143,7 @@ def test_memory_mutation(fresh_db):
     assert len(advil) == 1 and advil[0]["status"] == "stopped"
     assert advil[0]["provenance_pointer"]
 
+# Verifies that personal identifiers are removed before storage and logging
 def test_redaction(fresh_db):
     from redaction import redact
     redacted, found = redact("My name is John Doe and my IC is S1234567A.")
@@ -146,6 +156,7 @@ def test_redaction(fresh_db):
     assert all("Jane Tan" not in r["content_redacted"] for r in rows)
     assert all("Jane Tan" not in l["metadata"] and "S7654321B" not in l["metadata"] for l in logs)
 
+# Verifies that patients cannot access other patients' data or staff functions
 def test_access_control(fresh_db):
     c = client(fresh_db)
     _seed_staff(fresh_db, "nurse1", "nurse")
@@ -179,6 +190,7 @@ def test_access_control(fresh_db):
     r = c.get(f'/api/patient/{a["patient_session_id"]}/profile', headers={"Authorization": "Bearer " + ln["token"]})
     assert r.status_code == 200
 
+# Verifies that Nightingale clearly identifies itself as an AI, not a doctor
 def test_trust(fresh_db):
     c = client(fresh_db)
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]

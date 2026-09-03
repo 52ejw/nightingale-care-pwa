@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nightingale — Sunway Women's Health</title>
     <style>
+      /* Defines the main Nightingale colour palette */
       :root {
         --sage: #5f7a6a;
         --cream: #faf7f2;
@@ -47,6 +48,7 @@
         display: flex;
         flex-direction: column;
       }
+      /* Styles the scrollable conversation area */
       #thread {
         flex: 1;
         padding: 14px;
@@ -140,6 +142,8 @@
       #trustBar a {
         color: var(--sage);
       }
+
+      /* Styles the slide-out patient profile drawer */
       .drawer {
         position: fixed;
         right: 0;
@@ -245,6 +249,7 @@
         min-width: 16px;
         margin: 2px 0 0;
       }
+      /* Styles the staff dashboard and clinical queues */
       #staffView {
         max-width: 760px;
         margin: 24px auto;
@@ -362,6 +367,7 @@
         color: var(--sage);
         text-decoration: none;
       }
+      /* Adjusts the interface for smaller screens */
       @media (max-width: 600px) {
         #staffView {
           margin: 12px;
@@ -444,18 +450,22 @@
     </div>
 
     <script>
+      // Stores the current guest, patient and staff sesstion state
       let leadId = null,
         patientSessionId = null,
         patientToken = null,
         staffToken = null,
         lastTrigger = null;
 
+      // Switches between the patient chat and staff dashboard
       function showView(v) {
         document.getElementById("chatView").style.display =
           v === "chat" ? "flex" : "none";
         document.getElementById("staffView").style.display =
           v === "staff" ? "block" : "none";
       }
+
+      // Adds a message bubble to the conversation
       function addBubble(text, who, meta, citation) {
         const t = document.getElementById("thread");
         if (meta) {
@@ -477,6 +487,7 @@
         t.scrollTop = t.scrollHeight;
       }
 
+      // Restores an existing session or starts a new guest/referral conversation
       (async function start() {
         const savedPatientToken = localStorage.getItem(
           "nightingale_patient_token",
@@ -554,6 +565,7 @@
         addBubble(d.greeting, "them");
       })();
 
+      // Answers the user's question about whether Nightingale is a real doctor
       async function askTrust() {
         addBubble("Are you a real doctor?", "me");
         const r = await fetch(`/api/lead/${leadId}/message`, {
@@ -565,6 +577,7 @@
         addBubble(d.reply, "them");
       }
 
+      // Send's the user's message to the guest or authenticated patient flow
       async function sendMsg() {
         const input = document.getElementById("msgInput");
         const text = input.value.trim();
@@ -597,7 +610,7 @@
             "them",
           );
 
-          // SHOW ESCALATION STATUS FOR HIGH-RISK MESSAGE
+          // Shows that a high-risk guest message was sent to the clinic.
           if (d.escalation_required) {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -653,8 +666,10 @@
         }
       }
 
+      // Tracks whether the signup option has already been shown
       let signupOffered = false;
       function maybeOfferSignup() {
+        // Offers signup after the guest receives useful information
         if (signupOffered) return;
         signupOffered = true;
         const t = document.getElementById("thread");
@@ -680,6 +695,8 @@
           <button onclick="doSignup()">Continue securely to send this to the clinic</button>`;
         t.appendChild(card);
       }
+
+      // Requests a conversation summary to be sent by email
       async function sendSummaryEmail() {
         const email = document.getElementById("su_email").value;
         if (!email) {
@@ -705,6 +722,7 @@
         );
       }
 
+      // Logs in an existing patient and restores their secure session
       async function patientLogin() {
         const email = prompt("Enter your account email:");
         if (!email) return;
@@ -747,6 +765,8 @@
 
         loadProfile();
       }
+
+      // Creates the patient account and verifies it with the supplied code
       async function doSignup() {
         const body = {
           lead_session_id: leadId,
@@ -813,9 +833,12 @@
         loadProfile();
       }
 
+      // Opens or closes the patient's profile drawer
       function toggleDrawer() {
         document.getElementById("drawer").classList.toggle("open");
       }
+
+      // Loads saved patient facts and displays them in the profile
       async function loadProfile() {
         const r = await fetch(`/api/patient/${patientSessionId}/profile`, {
           headers: { Authorization: "Bearer " + patientToken },
@@ -831,6 +854,7 @@
         });
       }
 
+      // Sends the flagged patient message to the clinic for review
       async function sendEscalation() {
         const r = await fetch(`/api/patient/${patientSessionId}/escalate`, {
           method: "POST",
@@ -856,6 +880,8 @@
           "them",
         );
       }
+
+      // Authenticates staff and opens the clinical dashboard
       async function staffLogin() {
         const r = await fetch("/api/auth/login", {
           method: "POST",
@@ -871,11 +897,14 @@
           loadWarmLeads();
         }
       }
+
+      // Loads clinical escalations and sales follow-up leads for staff
       async function loadWarmLeads() {
         const r = await fetch("/api/staff/warm-leads", {
           headers: { Authorization: "Bearer " + staffToken },
         });
         const d = await r.json();
+        // Displays clinical concerns separately from sales-ranked leads
         document.getElementById("compassionBox").innerHTML =
           '<section class="staff-section compassion-section">' +
           '<div class="section-heading">' +
@@ -916,6 +945,8 @@
             .join("") || '<p class="empty-state">No warm leads yet</p>') +
           "</section>";
       }
+
+      // Opens the details of a flagged case for staff review
       async function viewEscalation(escId) {
         const existing = document.getElementById(`detail_${escId}`);
         if (existing) {
@@ -947,6 +978,7 @@
           .insertAdjacentElement("afterend", panel);
       }
 
+      // Sends the clinician's response and refreshes the case queue
       async function submitResponse(escId) {
         const text = document.getElementById(`resp_${escId}`).value.trim();
         if (!text) return;
