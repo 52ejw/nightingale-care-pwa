@@ -191,16 +191,15 @@ def lead_from_referral(token):
 def lead_start_internal(**kw):
     lead_id = new_id()
     DB.execute(
-        "INSERT INTO lead_sessions (id, clinic_id, source_channel, identity_level, context, landing_timestamp, created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (lead_id, "sunway_whf", kw["channel"], kw["identity_level"], kw["context"], now_iso(), now_iso())
+        "INSERT INTO lead_sessions (id, clinic_id, source_channel, identity_level, context, handle, landing_timestamp, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (lead_id, "sunway_whf", kw["channel"], kw["identity_level"], kw["context"], kw.get("handle"), now_iso(), now_iso())
     )
     DB.commit()
     opening = resolve_opening(kw["channel"], kw["identity_level"], topic=kw["context"],
                                staff_name=kw.get("staff_name"))
     emit_event(lead_id=lead_id, event_type="visitor", meta={"channel": kw["channel"]})
     return {"lead_session_id": lead_id, "greeting": opening["greeting"]}
-
 """
 Simulates a webhook triggered by a comment on a clinic post.
 Only the user's handle is known, so they remain anonymous.
@@ -256,7 +255,7 @@ def guest_reply(lead_id, text_redacted):
 def get_lead(lead_id):
     row = DB.execute(
         "SELECT id, clinic_id, source_channel, campaign_id, creative, "
-        "identity_level, context, status, landing_timestamp, created_at "
+        "identity_level, context, status, handle, landing_timestamp, created_at "
         "FROM lead_sessions WHERE id=?",
         (lead_id,),
     ).fetchone()
@@ -272,6 +271,7 @@ def get_lead(lead_id):
         "creative": row["creative"],
         "identity_level": row["identity_level"],
         "context": row["context"],
+        "handle": row["handle"],
         "status": row["status"],
         "landing_timestamp": row["landing_timestamp"],
         "created_at": row["created_at"],
