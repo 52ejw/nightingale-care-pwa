@@ -899,6 +899,7 @@ High-risk clinical concerns are handled separately and never included in sales s
 @app.get("/api/staff/warm-leads")
 @require_role("staff", "clinician", "nurse")
 def warm_leads():
+    role = g.session["role"]
     leads = DB.execute("SELECT * FROM lead_sessions ORDER BY created_at DESC LIMIT 50").fetchall()
     CHANNEL_WEIGHT = {"staff_referral": 5, "lead_form": 4, "instagram_comment": 3,
                        "tiktok_comment": 3, "facebook_comment": 3, "google_reviews": 3,
@@ -911,13 +912,18 @@ def warm_leads():
         channel_score = CHANNEL_WEIGHT.get(lead["source_channel"], 1)
         stage_score = 10 if lead["status"] == "converted" else 3
         score = round(recency_score + identity_score + channel_score + stage_score, 1)
-        # Guest messages stay hidden from staff until consent; staff only see the topic.
-        top_concern = lead["context"]
-        if lead["status"] == "converted":
+        # Guest messages stay hidden from ordinary staff until consent.
+        # Clinical staff can see the redacted guest message after conversion.
+        top_concern = lead["context"] or ""
+
+        if role in ("clinician", "nurse") and lead["status"] == "converted":
             top_msg = DB.execute(
-                "SELECT content_redacted FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at LIMIT 1",
+                "SELECT content_redacted FROM guest_messages "
+                "WHERE lead_session_id=? AND sender='guest' "
+                "ORDER BY created_at LIMIT 1",
                 (lead["id"],)
             ).fetchone()
+
             if top_msg:
                 top_concern = top_msg["content_redacted"]
 

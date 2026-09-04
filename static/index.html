@@ -460,6 +460,7 @@
         patientSessionId = null,
         patientToken = null,
         staffToken = null,
+        staffRole = null,
         lastTrigger = null,
         lastMessageTs = null;
 
@@ -939,11 +940,18 @@
             password: document.getElementById("staffPass").value,
           }),
         });
+
         const d = await r.json();
-        if (d.token) {
-          staffToken = d.token;
-          loadWarmLeads();
+
+        if (!r.ok || !d.token) {
+          alert(d.error || "Unable to log in.");
+          return;
         }
+
+        staffToken = d.token;
+        staffRole = d.role;
+
+        loadWarmLeads();
       }
 
       // Loads clinical escalations and sales follow-up leads for staff
@@ -951,44 +959,80 @@
         const r = await fetch("/api/staff/warm-leads", {
           headers: { Authorization: "Bearer " + staffToken },
         });
+
         const d = await r.json();
-        // Displays clinical concerns separately from sales-ranked leads
+
+        if (!r.ok) {
+          alert(d.error || "Unable to load staff dashboard.");
+          return;
+        }
+
+        const isClinical = staffRole === "clinician" || staffRole === "nurse";
+
+        const roleTitle = isClinical
+          ? "Clinical Review Dashboard"
+          : "Front Desk Lead Dashboard";
+
+        const roleDescription = isClinical
+          ? "Clinical staff can review redacted patient concerns and escalated cases."
+          : "Front-desk staff can manage lead follow-up without seeing guest free-text disclosures.";
+
+        document.getElementById("staffView").querySelector("h2").textContent =
+          roleTitle;
+
         document.getElementById("compassionBox").innerHTML =
           '<section class="staff-section compassion-section">' +
           '<div class="section-heading">' +
-          "<h3>Compassion priority</h3>" +
-          "<span>Clinical concerns</span>" +
+          "<h3>" +
+          (isClinical ? "Compassion priority" : "Clinic follow-up") +
+          "</h3>" +
+          "<span>" +
+          (isClinical ? "Clinical concerns" : "Lead management") +
+          "</span>" +
           "</div>" +
-          '<p class="section-note">These cases are surfaced separately and are never sales-ranked.</p>' +
-          (d.compassion_priority_queue
-            .map(
-              (
-                c,
-              ) => `<div class="leadrow compassion-row" id="row_${c.escalation_id}">
-                <span>${
-                  Array.isArray(c.summary)
-                    ? c.summary.join("; ")
-                    : c.summary?.risk_reason ||
-                      "Clinical concern requires review"
-                }</span>
-                <button onclick="viewEscalation('${c.escalation_id}')">View case</button>
-              </div>`,
-            )
-            .join("") || '<p class="empty-state">None pending</p>') +
+          '<p class="section-note">' +
+          roleDescription +
+          "</p>" +
+          (isClinical
+            ? d.compassion_priority_queue
+                .map(
+                  (c) =>
+                    `<div class="leadrow compassion-row" id="row_${c.escalation_id}">
+                  <span>${
+                    Array.isArray(c.summary)
+                      ? c.summary.join("; ")
+                      : c.summary?.risk_reason ||
+                        "Clinical concern requires review"
+                  }</span>
+                  <button onclick="viewEscalation('${c.escalation_id}')">
+                    View case
+                  </button>
+                </div>`,
+                )
+                .join("") || '<p class="empty-state">None pending</p>'
+            : '<p class="empty-state">Clinical escalation details are restricted to clinical staff.</p>') +
           "</section>";
+
         document.getElementById("leadsBox").innerHTML =
           '<section class="staff-section warm-leads-section">' +
           '<div class="section-heading">' +
           "<h3>Warm leads</h3>" +
-          "<span>Follow-up opportunities</span>" +
+          "<span>" +
+          (isClinical ? "Clinical context" : "Lead context only") +
+          "</span>" +
           "</div>" +
+          '<p class="section-note">' +
+          (isClinical
+            ? "Converted leads may include redacted guest context."
+            : "Guest free-text disclosures remain hidden until consent.") +
+          "</p>" +
           (d.warm_leads
             .map(
               (l) =>
                 `<div class="leadrow">
-                  <span>${l.channel} — ${l.top_concern || ""}</span>
-                  <b>${l.score}</b>
-                </div>`,
+            <span>${l.channel} — ${l.top_concern || ""}</span>
+            <b>${l.score}</b>
+          </div>`,
             )
             .join("") || '<p class="empty-state">No warm leads yet</p>') +
           "</section>";
