@@ -293,8 +293,8 @@ def guest_message(lead_id):
         }), 429
 
     raw = request.get_json(force=True)["message"]
+    risk = assess_risk(raw)
     redacted, phi_found = redact(raw)
-    risk = assess_risk(redacted)
 
     # Create the message ID first so any escalation points to the exact triggering message 
     msg_id = new_id()
@@ -776,8 +776,8 @@ def patient_message(ps_id):
         return jsonify({"error": "forbidden"}), 403
 
     raw = request.get_json(force=True)["message"]
-    redacted, _ = redact(raw)  # Redacted text used for risk assessment and response generation
-    risk = assess_risk(redacted)
+    risk = assess_risk(raw)
+    redacted, _ = redact(raw)  # Redacted text used only for storage and response generation
 
     msg_id = new_id()
     DB.execute(
@@ -911,14 +911,20 @@ def warm_leads():
         channel_score = CHANNEL_WEIGHT.get(lead["source_channel"], 1)
         stage_score = 10 if lead["status"] == "converted" else 3
         score = round(recency_score + identity_score + channel_score + stage_score, 1)
-        top_msg = DB.execute(
-            "SELECT content_redacted FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at LIMIT 1",
-            (lead["id"],)
-        ).fetchone()
+        # Guest messages stay hidden from staff until consent; staff only see the topic.
+        top_concern = lead["context"]
+        if lead["status"] == "converted":
+            top_msg = DB.execute(
+                "SELECT content_redacted FROM guest_messages WHERE lead_session_id=? AND sender='guest' ORDER BY created_at LIMIT 1",
+                (lead["id"],)
+            ).fetchone()
+            if top_msg:
+                top_concern = top_msg["content_redacted"]
+
         scored.append({
             "lead_id": lead["id"], "channel": lead["source_channel"], "identity_level": lead["identity_level"],
             "status": lead["status"], "score": score,
-            "top_concern": top_msg["content_redacted"] if top_msg else lead["context"],
+            "top_concern": top_concern,
             "contactable": bool(lead["email"] or lead["handle"]),
         })
 

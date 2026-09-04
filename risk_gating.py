@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 # High risk/urgent phrases e.g. chest pain, suicide mentions, stroke signs
 HIGH_RISK_MUST_CATCH = [
-    r"crushing chest pain", r"chest pain", r"difficulty breathing",
+    r"crushing chest pain", r"chest pain", r"chest tightness", r"difficulty breathing",
     r"can'?t breathe", r"heavy bleeding", r"bleeding heavily",
     r"want to hurt myself", r"hurt myself", r"kill myself", r"suicide",
     r"can'?t feel (my|one) side", r"face (is )?drooping", r"slurred speech",
@@ -17,6 +17,11 @@ HIGH_RISK_MUST_CATCH = [
     r"throat (is )?swelling", r"tongue (is )?swelling",
     r"severe allergic reaction", r"overdose",
     r"took too many (pills|medications)", r"unbearable pain",
+    # Malay 
+    r"sakit dada", r"dada (?:saya |aku )?sakit", r"sesak (?:nafas|dada)",
+    r"susah (?:nak )?bernafas", r"tak boleh bernafas", r"tak larat bernafas",
+    r"berdarah teruk", r"pendarahan teruk", r"muntah darah",
+    r"nak bunuh diri", r"bunuh diri", r"nak mati", r"sakit yang tak tertahan",
 ]
 
 # Phrases that suggest something concerning but not immediately life-threatening
@@ -25,6 +30,11 @@ MED_RISK_KEYWORDS = [
     r"dizzy", r"vomit", r"rash spreading", r"in pain",
     r"faint", r"fainted", r"nauseous", r"persistent pain",
     r"swelling", r"numbness", r"weakness", r"dehydrated",
+    #Malay
+    r"demam", r"semakin teruk", r"makin teruk", r"tak pasti", r"risau",
+    r"pening", r"muntah", r"ruam merebak", r"sakit",
+    r"pengsan", r"loya", r"sakit berterusan",
+    r"bengkak", r"kebas", r"lemah", r"kurang air",
 ]
 
 # Vague phrases that don't clearly say what's wrong — treated as medium risk
@@ -33,6 +43,11 @@ AMBIGUOUS_PATTERNS = [
     r"feels? funny", r"doesn'?t feel right", r"something'?s off", r"weird feeling",
     r"feels? strange", r"not feeling like myself", r"feeling unusual",
     r"something is wrong", r"feels? different",
+    #Malay
+    r"rasa pelik", r"rasa tak kena", r"ada sesuatu yang tak kena",
+    r"rasa lain", r"rasa aneh", r"tak rasa macam biasa",
+    r"rasa tak macam diri sendiri", r"sesuatu tak betul",
+    r"ada yang tak kena",
 ]
 
 def assess_risk(message: str) -> dict:
