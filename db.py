@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS messages (
 -- facts the assistant remembers about a patient over time
 CREATE TABLE IF NOT EXISTS memory_items (
     id TEXT PRIMARY KEY, patient_session_id TEXT, fact_type TEXT, value TEXT,
-    status TEXT, provenance_pointer TEXT, updated_at TEXT
+    status TEXT, provenance_pointer TEXT, updated_at TEXT, supersedes TEXT
 );
 -- cases flagged for a human clinician to review
 CREATE TABLE IF NOT EXISTS escalations (
@@ -112,6 +112,12 @@ def init_db(path=None):
             conn.execute(f"ALTER TABLE guest_messages ADD COLUMN {col} {coltype}")
         except sqlite3.OperationalError:
             pass
+        
+    try:
+        conn.execute("ALTER TABLE memory_items ADD COLUMN supersedes TEXT")
+    except sqlite3.OperationalError:
+        pass
+    
     # Save all the changes to disk
     conn.commit()
 

@@ -67,20 +67,30 @@ def extract_facts(message_id: str, text: str) -> list[dict]:
 
 def merge_into_profile(db, patient_session_id: str, new_facts: list[dict]):
     """
-        Mutation, not duplication: a new medication fact with the same value updates the
-        existing row's status + provenance instead of creating a second row.
+        Append-only for medications/allergies: a correction never overwrites
+        the row it corrects. Instead the old row is marked 'superseded' and
+        a new row is inserted pointing back at it, so both the original
+        provenance and the correction's provenance stay resolvable.
         """
     for fact in new_facts:
         # Check if we already have this exact fact stored for this patient
         existing = db.execute(
-            "SELECT id FROM memory_items WHERE patient_session_id=? AND fact_type=? AND lower(value)=lower(?)",
+            "SELECT id FROM memory_items WHERE patient_session_id=? AND fact_type=? AND lower(value)=lower(?) AND status != 'superseded'",
             (patient_session_id, fact["fact_type"], fact["value"]),
         ).fetchone()
-        # For medications/allergies, update the existing record instead of adding a duplicate
         if existing and fact["fact_type"] in ("medication", "allergy"):
+            if existing["id"]:
+                # Don't insert a no-op supersede if nothing actually changed
+                pass
             db.execute(
-                "UPDATE memory_items SET status=?, provenance_pointer=?, updated_at=? WHERE id=?",
-                (fact["status"], fact["provenance_pointer"], fact["updated_at"], existing["id"]),
+                "UPDATE memory_items SET status='superseded' WHERE id=?",
+                (existing["id"],),
+            )
+            db.execute(
+                "INSERT INTO memory_items (id, patient_session_id, fact_type, value, status, "
+                "provenance_pointer, updated_at, supersedes) VALUES (?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), patient_session_id, fact["fact_type"], fact["value"],
+                 fact["status"], fact["provenance_pointer"], fact["updated_at"], existing["id"]),
             )
         else:
             # Otherwise, this is a new fact — insert it as a fresh row

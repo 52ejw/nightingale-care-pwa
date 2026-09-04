@@ -818,7 +818,10 @@ def patient_message(ps_id):
 def get_profile(ps_id):
     if g.session["role"] == "patient" and g.session.get("patient_session_id") != ps_id:
         return jsonify({"error": "forbidden"}), 403
-    items = DB.execute("SELECT * FROM memory_items WHERE patient_session_id=?", (ps_id,)).fetchall()
+    items = DB.execute(
+        "SELECT * FROM memory_items WHERE patient_session_id=? AND status != 'superseded'",
+        (ps_id,)
+    ).fetchall()
     return jsonify([dict(r) for r in items])
 
 @app.get("/api/patient/<ps_id>/messages")
