@@ -68,6 +68,11 @@
         align-self: flex-start;
         background: var(--bubble-them);
       }
+      .clinician {
+        align-self: flex-start;
+        background: #e4efe1;
+        border-left: 3px solid var(--sage);
+      }
       .me {
         align-self: flex-end;
         background: var(--bubble-me);
@@ -455,7 +460,8 @@
         patientSessionId = null,
         patientToken = null,
         staffToken = null,
-        lastTrigger = null;
+        lastTrigger = null,
+        lastMessageTs = null;
 
       // Switches between the patient chat and staff dashboard
       function showView(v) {
@@ -475,7 +481,9 @@
           t.appendChild(m);
         }
         const b = document.createElement("div");
-        b.className = "bubble " + (who === "me" ? "me" : "them");
+        b.className =
+          "bubble " +
+          (who === "me" ? "me" : who === "clinician" ? "clinician" : "them");
         b.textContent = text;
         t.appendChild(b);
         if (citation) {
@@ -501,6 +509,8 @@
           patientSessionId = savedPatientSessionId;
           document.getElementById("profileToggle").style.display = "block";
           loadProfile();
+          loadMessages(true);
+          setInterval(() => loadMessages(false), 20000);
         }
         const params = new URLSearchParams(window.location.search);
         const referralToken = params.get("ref");
@@ -757,6 +767,8 @@
         );
 
         document.getElementById("profileToggle").style.display = "block";
+        lastMessageTs = new Date().toISOString();
+        setInterval(() => loadMessages(false), 20000);
 
         addBubble(
           "You're verified — your profile is ready. Let's continue from where you left off.",
@@ -831,6 +843,8 @@
           "them",
         );
         loadProfile();
+        lastMessageTs = new Date().toISOString();
+        setInterval(() => loadMessages(false), 20000);
       }
 
       // Opens or closes the patient's profile drawer
@@ -852,6 +866,40 @@
           d.innerHTML = `<b>${i.fact_type}</b>: ${i.value} <span class="status">${i.status}</span>`;
           box.appendChild(d);
         });
+      }
+
+      // Fetches the patient's message thread. On first call it hydrates the
+      // full history (e.g. on a resumed session); after that it only
+      // surfaces new clinician replies, since the AI turns already render
+      // live from sendMsg().
+      async function loadMessages(hydrate) {
+        const r = await fetch(`/api/patient/${patientSessionId}/messages`, {
+          headers: { Authorization: "Bearer " + patientToken },
+        });
+        if (!r.ok) return;
+        const msgs = await r.json();
+        if (!msgs.length) return;
+
+        if (hydrate) {
+          document.getElementById("thread").innerHTML = "";
+          msgs.forEach((m) =>
+            addBubble(
+              m.content_redacted,
+              m.sender === "patient"
+                ? "me"
+                : m.sender === "clinician"
+                  ? "clinician"
+                  : "them",
+            ),
+          );
+        } else {
+          msgs
+            .filter(
+              (m) => m.sender === "clinician" && m.created_at > lastMessageTs,
+            )
+            .forEach((m) => addBubble(m.content_redacted, "clinician"));
+        }
+        lastMessageTs = msgs[msgs.length - 1].created_at;
       }
 
       // Sends the flagged patient message to the clinic for review

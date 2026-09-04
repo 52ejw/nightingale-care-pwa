@@ -821,6 +821,19 @@ def get_profile(ps_id):
     items = DB.execute("SELECT * FROM memory_items WHERE patient_session_id=?", (ps_id,)).fetchall()
     return jsonify([dict(r) for r in items])
 
+@app.get("/api/patient/<ps_id>/messages")
+@require_role("patient", "staff", "clinician", "nurse")
+# Returns the message thread so a returning session or a poll can hydrate it
+def get_messages(ps_id):
+    if g.session["role"] == "patient" and g.session.get("patient_session_id") != ps_id:
+        return jsonify({"error": "forbidden"}), 403
+    rows = DB.execute(
+        "SELECT id, sender, content_redacted, created_at FROM messages "
+        "WHERE patient_session_id=? ORDER BY created_at",
+        (ps_id,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
 @app.post("/api/patient/<ps_id>/escalate")
 @require_role("patient")
 def escalate(ps_id):
@@ -974,7 +987,7 @@ def respond_escalation(esc_id):
     body = request.get_json(force=True)
 
     row = DB.execute(
-        "SELECT id FROM escalations WHERE id=?",
+        "SELECT id, patient_session_id FROM escalations WHERE id=?",
         (esc_id,)
     ).fetchone()
 
@@ -985,6 +998,15 @@ def respond_escalation(esc_id):
         "UPDATE escalations SET status='responded', clinician_response=? WHERE id=?",
         (body["response"], esc_id)
     )
+
+    # Puts the reply into the patient's own thread — an escalation response
+    # that only lives on the escalations row is invisible to the patient.
+    if row["patient_session_id"]:
+        DB.execute(
+            "INSERT INTO messages (id, patient_session_id, sender, content_redacted, created_at) "
+            "VALUES (?,?,?,?,?)",
+            (new_id(), row["patient_session_id"], "clinician", body["response"], now_iso())
+        )
     DB.commit()
 
     audit(g.session["id"], "escalation_responded", esc_id)
