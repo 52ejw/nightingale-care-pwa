@@ -196,3 +196,110 @@ def test_trust(fresh_db):
     lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
     r = c.post(f'/api/lead/{lead_id}/message', json={"message": "Are you a real doctor?"}).get_json()
     assert "not a doctor" in r["reply"].lower() and ("nurse" in r["reply"].lower() or "clinician" in r["reply"].lower())
+
+
+def test_social_handle_persisted(fresh_db):
+    c = client(fresh_db)
+    r = c.post('/api/webhook/social_comment', json={
+        "platform": "instagram_comment", "handle": "@mei.tries.again", "post_topic": "egg freezing"
+    }).get_json()
+    lead_id = r["portal_link"].split("lead=")[1]
+    lead = fresh_db.DB.execute("SELECT handle FROM lead_sessions WHERE id=?", (lead_id,)).fetchone()
+    assert lead["handle"] == "@mei.tries.again"
+
+def test_warm_leads_hides_preconsent_guest_words(fresh_db):
+    c = client(fresh_db)
+    _seed_staff(fresh_db, "wan", "staff")
+    _seed_staff(fresh_db, "nurse_amy2", "nurse")
+    lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
+    c.post(f'/api/lead/{lead_id}/message', json={"message": "trying to conceive for 2 years"})
+
+    staff_tok = c.post('/api/auth/login', json={"name": "wan", "password": "pw"}).get_json()["token"]
+    nurse_tok = c.post('/api/auth/login', json={"name": "nurse_amy2", "password": "pw"}).get_json()["token"]
+
+    # Staff never sees the guest's raw words, converted or not.
+    resp = c.get('/api/staff/warm-leads', headers={"Authorization": "Bearer " + staff_tok}).get_json()
+    pre_staff = next(l for l in resp["warm_leads"] if l["lead_id"] == lead_id)
+    assert "conceive" not in pre_staff["top_concern"].lower()
+
+    # Nurse doesn't see it pre-consent either.
+    resp_n = c.get('/api/staff/warm-leads', headers={"Authorization": "Bearer " + nurse_tok}).get_json()
+    pre_nurse = next(l for l in resp_n["warm_leads"] if l["lead_id"] == lead_id)
+    assert "conceive" not in pre_nurse["top_concern"].lower()
+
+    _signup_verified(fresh_db, c, lead_id, "mei@x.com", "0123456789")
+
+    # After consent: nurse sees the real words, staff still doesn't.
+    resp2 = c.get('/api/staff/warm-leads', headers={"Authorization": "Bearer " + nurse_tok}).get_json()
+    post_nurse = next(l for l in resp2["warm_leads"] if l["lead_id"] == lead_id)
+    assert "conceive" in post_nurse["top_concern"].lower()
+
+    resp3 = c.get('/api/staff/warm-leads', headers={"Authorization": "Bearer " + staff_tok}).get_json()
+    post_staff = next(l for l in resp3["warm_leads"] if l["lead_id"] == lead_id)
+    assert "conceive" not in post_staff["top_concern"].lower()
+
+def test_redaction_order_does_not_mask_risk(fresh_db):
+    """Fix #10: risk must be assessed on raw text, before redaction can eat a risk word."""
+    c = client(fresh_db)
+    lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
+    # "Im Overdosed" looks like a name to the redactor's "i'm <Capitalized>" pattern
+    r = c.post(f'/api/lead/{lead_id}/message', json={"message": "Im Overdosed on the painkillers"}).get_json()
+    assert r["risk_level"] == "high"
+
+def test_malay_and_chest_tightness_risk(fresh_db):
+    """Fix #9: emergency floor must catch code-switched Malay/English, incl. 'chest tightness'."""
+    from risk_gating import assess_risk
+    assert assess_risk("Doc, saya rasa chest tightness sejak semalam")["risk_level"] == "high"
+    assert assess_risk("saya susah bernafas")["risk_level"] == "high"
+
+def test_medication_correction_preserves_history(fresh_db):
+    # Fix 16: correcting a medication must supersede the old row, not overwrite it
+    c = client(fresh_db)
+    lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
+    sr = _signup_verified(fresh_db, c, lead_id, "advil@x.com", "012")
+    hdr = {"Authorization": "Bearer " + sr["token"]}
+    ps_id = sr["patient_session_id"]
+    c.post(f'/api/patient/{ps_id}/message', json={"message": "I take Advil for the cramping"}, headers=hdr)
+    c.post(f'/api/patient/{ps_id}/message', json={"message": "I take Advil, stopped it last week"}, headers=hdr)
+
+    profile = c.get(f'/api/patient/{ps_id}/profile', headers=hdr).get_json()
+    advil_visible = [p for p in profile if p["value"].lower() == "advil"]
+    assert len(advil_visible) == 1 and advil_visible[0]["status"] == "stopped"
+   
+
+def test_allergy_negation_and_contradiction(fresh_db):
+    """Fix #19: 'no known allergies' is captured, and a later real allergy replaces it (never both active)."""
+    c = client(fresh_db)
+    lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
+    sr = _signup_verified(fresh_db, c, lead_id, "allergy@x.com", "012")
+    hdr = {"Authorization": "Bearer " + sr["token"]}
+    ps_id = sr["patient_session_id"]
+    c.post(f'/api/patient/{ps_id}/message', json={"message": "No known allergies"}, headers=hdr)
+    c.post(f'/api/patient/{ps_id}/message', json={"message": "Penicillin gave me a rash"}, headers=hdr)
+
+    profile = c.get(f'/api/patient/{ps_id}/profile', headers=hdr).get_json()
+    active_allergies = [p for p in profile if p["fact_type"] == "allergy"]
+    assert len(active_allergies) == 1
+    assert "penicillin" in active_allergies[0]["value"].lower()
+
+def test_clinician_response_reaches_patient(fresh_db):
+    c = client(fresh_db)
+    _seed_staff(fresh_db, "dr_lim", "clinician")
+    lead_id = c.post('/api/lead/start', json={"source_channel": "website_widget"}).get_json()["lead_session_id"]
+    sr = _signup_verified(fresh_db, c, lead_id, "esc@x.com", "012")
+    hdr = {"Authorization": "Bearer " + sr["token"]}
+    ps_id = sr["patient_session_id"]
+
+    m = c.post(f'/api/patient/{ps_id}/message', json={"message": "I have crushing chest pain"}, headers=hdr).get_json()
+    e = c.post(f'/api/patient/{ps_id}/escalate',
+               json={"triggering_message_id": m["triggering_message_id"]}, headers=hdr).get_json()
+
+    nurse_tok = c.post('/api/auth/login', json={"name": "dr_lim", "password": "pw"}).get_json()["token"]
+    c.post(f'/api/staff/escalation/{e["escalation_id"]}/respond',
+           json={"response": "Please go to the nearest ER now."},
+           headers={"Authorization": "Bearer " + nurse_tok})
+
+    thread = c.get(f'/api/patient/{ps_id}/messages', headers=hdr).get_json()
+    clinician_msgs = [msg for msg in thread if msg.get("sender") == "clinician"]
+    assert len(clinician_msgs) == 1
+    assert "er" in clinician_msgs[0]["content_redacted"].lower() or "nearest" in clinician_msgs[0]["content_redacted"].lower()
